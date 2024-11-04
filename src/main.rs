@@ -24,6 +24,7 @@ async fn main() {
                         }
                         let req = String::from_utf8_lossy(&buffer[0..count]);
                         println!("{}", req);
+                        stream.writable().await.unwrap();
                         stream.try_write(s.as_bytes()).unwrap();
                     } else {
                         break;
