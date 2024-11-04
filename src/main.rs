@@ -1,7 +1,10 @@
 // Uncomment this block to pass the first stage
 
 use bytes::{Buf, BytesMut};
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpListener};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+};
 
 #[tokio::main]
 async fn main() {
@@ -19,16 +22,18 @@ async fn main() {
                     let s = "+PONG\r\n";
                     let mut buffer = BytesMut::new();
                     loop {
-                        if let Ok(count) = stream.read(&mut buffer).await {
-                            if count == 0 {
+                        match stream.read(&mut buffer).await {
+                            Ok(0) => break,
+                            Ok(count) => {
+                                let req = String::from_utf8_lossy(&buffer[0..count]);
+                                println!("{}", req);
+                                buffer.advance(count);
+                                stream.write(s.as_bytes()).await.unwrap();
+                            }
+                            Err(e) => {
+                                println!("error: {}", e);
                                 break;
                             }
-                            let req = String::from_utf8_lossy(&buffer[0..count]);
-                            println!("{}", req);
-                            buffer.advance(count);
-                            stream.write(s.as_bytes()).await.unwrap();
-                        } else {
-                            break;
                         }
                     }
                 });
