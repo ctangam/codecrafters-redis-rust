@@ -8,3 +8,4 @@ pub enum Command {
     Ping(Ping),
     Echo(Echo),
 }
+

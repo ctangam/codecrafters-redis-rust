@@ -1,12 +1,16 @@
 // Uncomment this block to pass the first stage
 
 use bytes::{Buf, BytesMut};
+use frame::{Frame, FrameCodec};
+use futures_util::{SinkExt, StreamExt};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
 };
+use tokio_util::codec::Framed;
 
 mod cmd;
+mod frame;
 
 #[tokio::main]
 async fn main() {
@@ -18,33 +22,33 @@ async fn main() {
 
     loop {
         match listener.accept().await {
-            Ok((mut stream, _)) => {
+            Ok((stream, _)) => {
                 println!("accepted new connection");
                 tokio::spawn(async move {
-                    let mut buffer = BytesMut::with_capacity(4096);
+                    let mut client = Framed::new(stream, FrameCodec);
                     loop {
-                        match stream.read_buf(&mut buffer).await {
-                            Ok(0) => break,
-                            Ok(count) => {
-                                let req = String::from_utf8_lossy(&buffer[0..count]);
-                                println!("{}", req);
-                                let s = {
-                                    match &req[..4] {
-                                        "PING" => "+PONG\r\n",
-                                        "ECHO" => {
-                                            let msg = &req[5..];
-                                            println!("ECHO: {}", msg);
-                                            msg
+                        let frame = client.next().await.unwrap().unwrap();
+
+                        match frame {
+                            Frame::Simple(msg) => {
+                                println!("simple: {}", msg);
+                                if msg == "PING" {
+                                    client.send(Frame::Simple("PONG".to_string())).await.unwrap();
+                                }
+                            }
+                            Frame::Array(msg) => {
+                                if msg.len() == 2 {
+                                    if let Frame::Simple(cmd) = &msg[0] {
+                                        if cmd == "ECHO" {
+                                            if let Frame::Bulk(msg) = &msg[1] {
+                                                client.send(Frame::Bulk(msg.clone())).await.unwrap();
+                                            }
                                         }
-                                        _ => "+OK\r\n",
                                     }
-                                };
-                                stream.write(s.as_bytes()).await.unwrap();
+                                    
+                                }
                             }
-                            Err(e) => {
-                                println!("error: {}", e);
-                                break;
-                            }
+                            _ => {}
                         }
                     }
                 });
