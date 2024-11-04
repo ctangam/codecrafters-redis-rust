@@ -20,14 +20,13 @@ async fn main() {
                 println!("accepted new connection");
                 tokio::spawn(async move {
                     let s = "+PONG\r\n";
-                    let mut buffer = BytesMut::new();
+                    let mut buffer = vec![0; 512];
                     loop {
                         match stream.read(&mut buffer).await {
                             Ok(0) => continue,
                             Ok(count) => {
                                 let req = String::from_utf8_lossy(&buffer[0..count]);
                                 println!("{}", req);
-                                buffer.advance(count);
                                 stream.write(s.as_bytes()).await.unwrap();
                             }
                             Err(e) => {
