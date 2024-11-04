@@ -1,6 +1,7 @@
 // Uncomment this block to pass the first stage
 
-use tokio::net::TcpListener;
+use bytes::{Buf, BytesMut};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpListener};
 
 #[tokio::main]
 async fn main() {
@@ -9,27 +10,28 @@ async fn main() {
 
     // Uncomment this block to pass the first stage
     let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
-    
+
     loop {
         match listener.accept().await {
-            Ok((stream, _)) => {
+            Ok((mut stream, _)) => {
                 println!("accepted new connection");
-                let s = "+PONG\r\n";
-                loop {
-                    stream.readable().await.unwrap();
-                    let mut buffer = [0; 512];
-                    if let Ok(count) = stream.try_read(&mut buffer) {
-                        if count == 0 {
+                tokio::spawn(async move {
+                    let s = "+PONG\r\n";
+                    let mut buffer = BytesMut::new();
+                    loop {
+                        if let Ok(count) = stream.read(&mut buffer).await {
+                            if count == 0 {
+                                break;
+                            }
+                            let req = String::from_utf8_lossy(&buffer[0..count]);
+                            println!("{}", req);
+                            buffer.advance(count);
+                            stream.write(s.as_bytes()).await.unwrap();
+                        } else {
                             break;
                         }
-                        let req = String::from_utf8_lossy(&buffer[0..count]);
-                        println!("{}", req);
-                        stream.writable().await.unwrap();
-                        stream.try_write(s.as_bytes()).unwrap();
-                    } else {
-                        break;
                     }
-                }
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
