@@ -6,6 +6,8 @@ use tokio::{
     net::TcpListener,
 };
 
+mod cmd;
+
 #[tokio::main]
 async fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -19,14 +21,24 @@ async fn main() {
             Ok((mut stream, _)) => {
                 println!("accepted new connection");
                 tokio::spawn(async move {
-                    let s = "+PONG\r\n";
-                    let mut buffer = vec![0; 512];
+                    let mut buffer = BytesMut::with_capacity(4096);
                     loop {
-                        match stream.read(&mut buffer).await {
-                            Ok(0) => continue,
+                        match stream.read_buf(&mut buffer).await {
+                            Ok(0) => break,
                             Ok(count) => {
                                 let req = String::from_utf8_lossy(&buffer[0..count]);
                                 println!("{}", req);
+                                let s = {
+                                    match &req[..4] {
+                                        "PING" => "+PONG\r\n",
+                                        "ECHO" => {
+                                            let msg = &req[5..];
+                                            println!("ECHO: {}", msg);
+                                            msg
+                                        }
+                                        _ => "+OK\r\n",
+                                    }
+                                };
                                 stream.write(s.as_bytes()).await.unwrap();
                             }
                             Err(e) => {
