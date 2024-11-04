@@ -16,6 +16,7 @@ async fn main() {
                 println!("accepted new connection");
                 let s = "+PONG\r\n";
                 loop {
+                    stream.readable().await.unwrap();
                     let mut buffer = [0; 512];
                     if let Ok(count) = stream.try_read(&mut buffer) {
                         if count == 0 {
