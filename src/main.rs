@@ -23,7 +23,7 @@ async fn main() {
                     let mut buffer = BytesMut::new();
                     loop {
                         match stream.read(&mut buffer).await {
-                            Ok(0) => break,
+                            Ok(0) => continue,
                             Ok(count) => {
                                 let req = String::from_utf8_lossy(&buffer[0..count]);
                                 println!("{}", req);
