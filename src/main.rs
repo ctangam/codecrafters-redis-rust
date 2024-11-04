@@ -19,6 +19,8 @@ fn main() {
                         if count == 0 {
                             break;
                         }
+                        let req = String::from_utf8_lossy(&buffer[0..count]);
+                        println!("{}", req);
                         stream.write(s.as_bytes()).unwrap();
                     } else {
                         break;
