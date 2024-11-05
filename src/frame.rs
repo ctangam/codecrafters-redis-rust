@@ -153,7 +153,7 @@ impl Encoder<Frame> for FrameCodec {
                 dst.extend_from_slice(b"\r\n");
             }
             Frame::Null => {
-                dst.extend_from_slice(b"_\r\n");
+                dst.extend_from_slice(b"$-1\r\n");
             }
             _ => unimplemented!(),
         }

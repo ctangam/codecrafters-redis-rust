@@ -76,7 +76,7 @@ async fn main() {
                                     if let Some(expires) = expires {
                                         let now = Instant::now();
                                         if now > expires {
-                                            client.send(Frame::Bulk("-1".to_string().into_bytes().into())).await.unwrap();
+                                            client.send(Frame::Null).await.unwrap();
                                             continue;
                                         }
                                     }
@@ -85,7 +85,7 @@ async fn main() {
                                         .await
                                         .unwrap();
                                 } else {
-                                    client.send(Frame::Bulk("-1".to_string().into_bytes().into())).await.unwrap();
+                                    client.send(Frame::Null).await.unwrap();
                                 }
                             }
                             Ok(Command::Unknown(_)) => {
