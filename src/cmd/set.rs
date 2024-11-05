@@ -24,16 +24,18 @@ impl Set {
         // `None`.
         let mut expire = None;
 
-        match parse.next_string()? {
-            s if s.to_uppercase() == "EX" => {
+        match parse.next_string() {
+            Ok(s) if s.to_uppercase() == "EX" => {
                 let seconds = parse.next_int()?;
                 expire = Some(Duration::from_secs(seconds));
             }
-            s if s.to_uppercase() == "PX" => {
+            Ok(s) if s.to_uppercase() == "PX" => {
                 let milliseconds = parse.next_int()?;
                 expire = Some(Duration::from_millis(milliseconds));
             }
-            _ => return Err("protocol error; invalid set command".into()),
+            Ok(_) => return Err("currently `SET` only supports the expiration option".into()),
+            Err(EndOfStream) => {}
+            Err(err) => return Err(err.into()),
         };
 
         Ok(Set {
