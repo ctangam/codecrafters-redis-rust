@@ -54,8 +54,8 @@ async fn main() {
                                 .await
                                 .unwrap(),
                             Ok(Command::Set(set)) => {
-                                let expires = set.expires.and_then(|expires| {
-                                    Instant::now().checked_add(std::time::Duration::from_millis(expires))
+                                let expires = set.expire.and_then(|expire| {
+                                    Instant::now().checked_add(expire)
                                 });
                                 {
                                     let mut db = db.lock().unwrap();
@@ -87,6 +87,9 @@ async fn main() {
                                 } else {
                                     client.send(Frame::Simple("nil".to_string())).await.unwrap();
                                 }
+                            }
+                            Ok(Command::Unknown(_)) => {
+                                continue;
                             }
                             Err(e) => {
                                 println!("error: {}", e);

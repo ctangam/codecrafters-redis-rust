@@ -50,6 +50,22 @@ impl Parse {
         }
     }
 
+    pub fn next_int(&mut self) -> Result<u64, ParseError> {
+        use atoi::atoi;
+
+        const MSG: &str = "protocol error; invalid number";
+
+        match self.next()? {
+            // An integer frame type is already stored as an integer.
+            Frame::Integer(v) => Ok(v),
+            // Simple and bulk frames must be parsed as integers. If the parsing
+            // fails, an error is returned.
+            Frame::Simple(data) => atoi::<u64>(data.as_bytes()).ok_or_else(|| MSG.into()),
+            Frame::Bulk(data) => atoi::<u64>(&data).ok_or_else(|| MSG.into()),
+            frame => Err(format!("protocol error; expected int frame but got {:?}", frame).into()),
+        }
+    }
+
     pub fn next_bytes(&mut self) -> Result<Bytes, ParseError> {
         match self.next()? {
             Frame::Simple(msg) => Ok(msg.into_bytes().into()),
@@ -59,6 +75,14 @@ impl Parse {
                 frame
             )
             .into()),
+        }
+    }
+
+    pub fn finish(&mut self) -> Result<(), ParseError> {
+        if self.parts.next().is_none() {
+            Ok(())
+        } else {
+            Err("protocol error; expected end of frame, but there was more".into())
         }
     }
 
