@@ -3,7 +3,7 @@
 use core::str;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex}, time::Instant,
 };
 
 use bytes::{Buf, BytesMut};
@@ -54,9 +54,12 @@ async fn main() {
                                 .await
                                 .unwrap(),
                             Ok(Command::Set(set)) => {
+                                let expires = set.expires.and_then(|expires| {
+                                    Instant::now().checked_add(std::time::Duration::from_millis(expires))
+                                });
                                 {
                                     let mut db = db.lock().unwrap();
-                                    db.insert(set.key, set.value);
+                                    db.insert(set.key, (set.value, expires));
                                     drop(db);
                                 }
 
@@ -69,7 +72,14 @@ async fn main() {
                                     drop(db);
                                     value
                                 };
-                                if let Some(value) = value {
+                                if let Some((value, expires)) = value {
+                                    if let Some(expires) = expires {
+                                        let now = Instant::now();
+                                        if now > expires {
+                                            client.send(Frame::Simple("nil".to_string())).await.unwrap();
+                                            continue;
+                                        }
+                                    }
                                     client
                                         .send(Frame::Bulk(value.clone().into()))
                                         .await
