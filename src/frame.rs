@@ -23,6 +23,7 @@ impl Decoder for FrameCodec {
         if src.is_empty() {
             return Ok(None);
         }
+        println!("decode: {:?}", str::from_utf8(&src).unwrap());
 
         let frame_type = src[0];
         let frame = match frame_type {
@@ -79,10 +80,10 @@ impl Decoder for FrameCodec {
                     i += 1;
                 }
 
-                let len = u64::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap();
+                let len = usize::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap();
                 
                 buffer.clear();
-                buffer.copy_from_slice(&src[i + 2..i + 2 + len as usize]);
+                buffer.copy_from_slice(&src[i + 2..i + 2 + len]);
 
                 src.advance(i + 2 + len as usize + 2);
                 Frame::Bulk(Bytes::from(buffer))
