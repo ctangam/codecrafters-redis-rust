@@ -54,13 +54,18 @@ async fn main() {
                                                     .await
                                                     .unwrap();
                                             }
-                                        } else if cmd == "PING" {
-                                            client
-                                                .send(Frame::Simple("PONG".to_string()))
-                                                .await
-                                                .unwrap();
                                         }
                                     }
+                                }
+                                if let Frame::Bulk(msg) = &frames[0] {
+                                    let cmd = str::from_utf8(msg).unwrap();
+                                    if cmd == "PING" {
+                                        client
+                                            .send(Frame::Simple("PONG".to_string()))
+                                            .await
+                                            .unwrap();
+                                    }
+                                    
                                 }
                             }
                             _ => {}
