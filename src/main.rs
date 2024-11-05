@@ -1,8 +1,13 @@
 // Uncomment this block to pass the first stage
 
 use core::str;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use bytes::{Buf, BytesMut};
+use cmd::{ping::Ping, Command};
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
@@ -13,6 +18,10 @@ use tokio_util::codec::Framed;
 
 mod cmd;
 mod frame;
+mod parse;
+
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[tokio::main]
 async fn main() {
@@ -22,53 +31,57 @@ async fn main() {
     // Uncomment this block to pass the first stage
     let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
 
+    let db = Arc::new(Mutex::new(HashMap::new()));
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
                 println!("accepted new connection");
+
+                let db = db.clone();
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
                     loop {
                         let frame = client.next().await.unwrap().unwrap();
                         println!("frame: {:?}", frame);
 
-                        match frame {
-                            Frame::Simple(msg) => {
-                                println!("simple: {}", msg);
-                                if msg == "PING" {
+                        match Command::from(frame) {
+                            Ok(Command::Ping(_)) => client
+                                .send(Frame::Simple("PONG".to_string()))
+                                .await
+                                .unwrap(),
+                            Ok(Command::Echo(echo)) => client
+                                .send(Frame::Bulk(echo.message.into_bytes().into()))
+                                .await
+                                .unwrap(),
+                            Ok(Command::Set(set)) => {
+                                {
+                                    let mut db = db.lock().unwrap();
+                                    db.insert(set.key, set.value);
+                                    drop(db);
+                                }
+
+                                client.send(Frame::Simple("OK".to_string())).await.unwrap();
+                            }
+                            Ok(Command::Get(get)) => {
+                                let value = {
+                                    let db = db.lock().unwrap();
+                                    let value = db.get(&get.key).cloned();
+                                    drop(db);
+                                    value
+                                };
+                                if let Some(value) = value {
                                     client
-                                        .send(Frame::Simple("PONG".to_string()))
+                                        .send(Frame::Bulk(value.clone().into()))
                                         .await
                                         .unwrap();
+                                } else {
+                                    client.send(Frame::Simple("nil".to_string())).await.unwrap();
                                 }
                             }
-                            Frame::Array(frames) => {
-                                if frames.len() == 2 {
-                                    if let Frame::Bulk(msg) = &frames[0] {
-                                        let cmd = str::from_utf8(msg).unwrap();
-                                        if cmd == "ECHO" {
-                                            if let Frame::Bulk(msg) = &frames[1] {
-                                                println!("echo: {}", str::from_utf8(msg).unwrap());
-                                                client
-                                                    .send(Frame::Bulk(msg.clone()))
-                                                    .await
-                                                    .unwrap();
-                                            }
-                                        }
-                                    }
-                                }
-                                if let Frame::Bulk(msg) = &frames[0] {
-                                    let cmd = str::from_utf8(msg).unwrap();
-                                    if cmd == "PING" {
-                                        client
-                                            .send(Frame::Simple("PONG".to_string()))
-                                            .await
-                                            .unwrap();
-                                    }
-                                    
-                                }
+                            Err(e) => {
+                                println!("error: {}", e);
+                                client.send(Frame::Error(e.to_string())).await.unwrap();
                             }
-                            _ => {}
                         }
                     }
                 });
