@@ -54,6 +54,11 @@ async fn main() {
                                                     .await
                                                     .unwrap();
                                             }
+                                        } else if cmd == "PING" {
+                                            client
+                                                .send(Frame::Simple("PONG".to_string()))
+                                                .await
+                                                .unwrap();
                                         }
                                     }
                                 }
