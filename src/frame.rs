@@ -81,11 +81,12 @@ impl Decoder for FrameCodec {
                 }
 
                 let len = usize::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap();
+                println!("len: {}", len);
                 
-                buffer.clear();
+                let mut buffer = vec![0; len];
                 buffer.copy_from_slice(&src[i + 2..i + 2 + len]);
 
-                src.advance(i + 2 + len as usize + 2);
+                src.advance(i + 2 + len + 2);
                 Frame::Bulk(Bytes::from(buffer))
             }
             b'*' => {
@@ -100,6 +101,7 @@ impl Decoder for FrameCodec {
                 }
 
                 let count = usize::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap();
+                println!("count: {}", count);
                 src.advance(i + 2);
 
                 let mut frames = Vec::with_capacity(count);

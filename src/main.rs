@@ -1,5 +1,7 @@
 // Uncomment this block to pass the first stage
 
+use core::str;
+
 use bytes::{Buf, BytesMut};
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
