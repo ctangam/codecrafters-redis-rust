@@ -76,7 +76,7 @@ async fn main() {
                                     if let Some(expires) = expires {
                                         let now = Instant::now();
                                         if now > expires {
-                                            client.send(Frame::Simple("nil".to_string())).await.unwrap();
+                                            client.send(Frame::Bulk("-1".to_string().into_bytes().into())).await.unwrap();
                                             continue;
                                         }
                                     }
