@@ -82,7 +82,7 @@ impl Decoder for FrameCodec {
 
                 let len = usize::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap();
                 println!("len: {}", len);
-                
+
                 let mut buffer = vec![0; len];
                 buffer.copy_from_slice(&src[i + 2..i + 2 + len]);
 
@@ -149,7 +149,7 @@ impl Encoder<Frame> for FrameCodec {
             Frame::Bulk(msg) => {
                 dst.extend_from_slice(b"$");
                 let len = msg.len();
-                dst.extend_from_slice(&len.to_be_bytes());
+                dst.extend_from_slice(len.to_string().as_bytes());
                 dst.extend_from_slice(b"\r\n");
                 dst.extend_from_slice(&msg[..]);
                 dst.extend_from_slice(b"\r\n");
