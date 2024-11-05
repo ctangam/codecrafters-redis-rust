@@ -24,7 +24,6 @@ impl Decoder for FrameCodec {
         if src.is_empty() {
             return Ok(None);
         }
-        println!("decode: {:?}", str::from_utf8(&src).unwrap());
 
         let frame_type = src[0];
         let frame = match frame_type {
@@ -82,7 +81,6 @@ impl Decoder for FrameCodec {
                 }
 
                 let len = usize::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap();
-                println!("len: {}", len);
 
                 let mut buffer = vec![0; len];
                 buffer.copy_from_slice(&src[i + 2..i + 2 + len]);
@@ -102,7 +100,6 @@ impl Decoder for FrameCodec {
                 }
 
                 let count = usize::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap();
-                println!("count: {}", count);
                 src.advance(i + 2);
 
                 let mut frames = Vec::with_capacity(count);
