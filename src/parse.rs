@@ -13,7 +13,7 @@ pub struct Parse {
 /// Only `EndOfStream` errors are handled at runtime. All other errors result in
 /// the connection being terminated.
 #[derive(Debug)]
-pub(crate) enum ParseError {
+pub enum ParseError {
     /// Attempting to extract a value failed due to the frame being fully
     /// consumed.
     EndOfStream,
