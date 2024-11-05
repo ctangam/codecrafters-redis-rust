@@ -28,6 +28,7 @@ async fn main() {
                     let mut client = Framed::new(stream, FrameCodec);
                     loop {
                         let frame = client.next().await.unwrap().unwrap();
+                        println!("frame: {:?}", frame);
 
                         match frame {
                             Frame::Simple(msg) => {
@@ -45,7 +46,6 @@ async fn main() {
                                             }
                                         }
                                     }
-                                    
                                 }
                             }
                             _ => {}
