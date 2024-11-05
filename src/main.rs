@@ -36,15 +36,23 @@ async fn main() {
                             Frame::Simple(msg) => {
                                 println!("simple: {}", msg);
                                 if msg == "PING" {
-                                    client.send(Frame::Simple("PONG".to_string())).await.unwrap();
+                                    client
+                                        .send(Frame::Simple("PONG".to_string()))
+                                        .await
+                                        .unwrap();
                                 }
                             }
-                            Frame::Array(msg) => {
-                                if msg.len() == 2 {
-                                    if let Frame::Simple(cmd) = &msg[0] {
+                            Frame::Array(frames) => {
+                                if frames.len() == 2 {
+                                    if let Frame::Bulk(msg) = &frames[0] {
+                                        let cmd = str::from_utf8(msg).unwrap();
                                         if cmd == "ECHO" {
-                                            if let Frame::Bulk(msg) = &msg[1] {
-                                                client.send(Frame::Bulk(msg.clone())).await.unwrap();
+                                            if let Frame::Bulk(msg) = &frames[1] {
+                                                println!("echo: {}", str::from_utf8(msg).unwrap());
+                                                client
+                                                    .send(Frame::Bulk(msg.clone()))
+                                                    .await
+                                                    .unwrap();
                                             }
                                         }
                                     }
