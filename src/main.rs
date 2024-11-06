@@ -28,7 +28,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 async fn main() {
     let args = std::env::args().collect::<Vec<String>>();
 
-    let mut config = Arc::new(Mutex::new(HashMap::new()));
+    let config = Arc::new(Mutex::new(HashMap::new()));
     if args.len() > 2 && (args[1] == "--dir" || args[3] == "--dbfilename") {
         config
             .lock()
