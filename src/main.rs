@@ -3,7 +3,8 @@
 use core::str;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex}, time::Instant,
+    sync::{Arc, Mutex},
+    time::Instant,
 };
 
 use bytes::{Buf, BytesMut};
@@ -25,8 +26,19 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[tokio::main]
 async fn main() {
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    println!("Logs from your program will appear here!");
+    let args = std::env::args().collect::<Vec<String>>();
+
+    let mut config = Arc::new(Mutex::new(HashMap::new()));
+    if args.len() > 2 && (args[1] == "--dir" || args[3] == "--dbfilename") {
+        config
+            .lock()
+            .unwrap()
+            .insert("dir".to_string(), args[2].clone());
+        config
+            .lock()
+            .unwrap()
+            .insert("dbfilename".to_string(), args[4].clone());
+    }
 
     // Uncomment this block to pass the first stage
     let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
@@ -38,6 +50,7 @@ async fn main() {
                 println!("accepted new connection");
 
                 let db = db.clone();
+                let config = config.clone();
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
                     loop {
@@ -54,9 +67,9 @@ async fn main() {
                                 .await
                                 .unwrap(),
                             Ok(Command::Set(set)) => {
-                                let expires = set.expire.and_then(|expire| {
-                                    Instant::now().checked_add(expire)
-                                });
+                                let expires = set
+                                    .expire
+                                    .and_then(|expire| Instant::now().checked_add(expire));
                                 {
                                     let mut db = db.lock().unwrap();
                                     db.insert(set.key, (set.value, expires));
@@ -84,6 +97,22 @@ async fn main() {
                                         .send(Frame::Bulk(value.clone().into()))
                                         .await
                                         .unwrap();
+                                } else {
+                                    client.send(Frame::Null).await.unwrap();
+                                }
+                            }
+                            Ok(Command::ConfigGet(cmd)) => {
+                                let key = cmd.key;
+                                let value = {
+                                    let config = config.lock().unwrap();
+                                    config.get(&key).cloned()
+                                };
+                                if value.is_some() {
+                                    let frame = Frame::Array(vec![
+                                        Frame::Bulk(key.into_bytes().into()),
+                                        Frame::Bulk(value.unwrap().into_bytes().into()),
+                                    ]);
+                                    client.send(frame).await.unwrap();
                                 } else {
                                     client.send(Frame::Null).await.unwrap();
                                 }
