@@ -155,6 +155,15 @@ impl Encoder<Frame> for FrameCodec {
             Frame::Null => {
                 dst.extend_from_slice(b"$-1\r\n");
             }
+            Frame::Array(frames) => {
+                dst.extend_from_slice(b"*");
+                let len = frames.len();
+                dst.extend_from_slice(len.to_string().as_bytes());
+                dst.extend_from_slice(b"\r\n");
+                for frame in frames {
+                    self.encode(frame, dst)?;
+                }
+            }
             _ => unimplemented!(),
         }
         Ok(())
