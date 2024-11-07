@@ -30,7 +30,7 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
     dbfile.read_to_end(&mut buf).await.unwrap();
     let mut buf = BytesMut::from(&buf[..]);
 
-    println!("{:?}", str::from_utf8(&buf[..]).unwrap());
+    println!("{:?}", String::from_utf8_lossy(&buf[..]));
     let header = &buf[..9];
     let header = str::from_utf8(header).unwrap();
     println!("header: {}", header);
