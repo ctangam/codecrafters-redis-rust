@@ -4,7 +4,7 @@ use core::str;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -12,7 +12,9 @@ use cmd::{ping::Ping, Command};
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
-    fs::{read_to_string, File}, io::{AsyncReadExt, AsyncWriteExt}, net::TcpListener
+    fs::{read_to_string, File},
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
 };
 use tokio_util::codec::Framed;
 
@@ -29,40 +31,109 @@ async fn parse_dbfile(dbfile: &str, db: DB) {
     let mut buf = Vec::new();
     dbfile.read_to_end(&mut buf).await.unwrap();
     let mut buf = BytesMut::from(&buf[..]);
-    
+
     let header = &buf[..9];
     let header = str::from_utf8(header).unwrap();
     println!("header: {}", header);
     buf.advance(9);
 
-    let mut tag = buf[0];
-    assert_eq!(tag, 0xFA);
-    buf.advance(1);
-    while buf.has_remaining() {
-        let name_len = buf[0] & 0b00111111;
-        let name_len = name_len as usize;
+    let mut metadatas = Vec::new();
+    while buf[0] == 0xFA {
+        buf.advance(1);
 
-        let name = &buf[1..1 + name_len];
-        let name = str::from_utf8(name).unwrap();
-        println!("name: {}", name);
+        let name = string_decode(&mut buf);
+        let value = string_decode(&mut buf);
 
-        buf.advance(1 + name_len);
+        metadatas.push((name, value));
+    }
+    println!("metadatas: {:?}", metadatas);
 
-        let value_len = buf[0] & 0b00111111;
-        let value_len = value_len as usize;
+    let mut db = db.lock().unwrap();
+    while buf[0] == 0xFE {
+        buf.advance(1);
 
-        let value = &buf[1..1 + value_len];
-        let value = str::from_utf8(value).unwrap();
-        println!("value: {}", value);
+        let index = size_decode(&mut buf);
+        println!("index: {}", index);
+        let size = size_decode(&mut buf);
+        println!("size: {}", size);
+        let expire_size = size_decode(&mut buf);
+        println!("expire_size: {}", expire_size);
 
-        buf.advance(1 + value_len);
+        for _ in 0..size {
+            let value_type = buf[0];
+            assert_eq!(value_type, 0);
+            buf.advance(1);
+            let key = string_decode(&mut buf);
+            let value = string_decode(&mut buf);
+            db.insert(key, (value.into(), None));
+        }
 
-        tag = buf[0];
-        if tag == 0xFE {
-            break;
+        for _ in 0..expire_size {
+            let expire_type = buf[0];
+            buf.advance(1);
+            let expire = if expire_type == 0xFC {
+                let value = u64::from_le_bytes(buf[..8].try_into().unwrap());
+                Instant::now() + Duration::from_millis(value)
+            } else {
+                let value = u64::from_le_bytes(buf[..4].try_into().unwrap());
+                Instant::now() + Duration::from_secs(value)
+            };
+
+            let value_type = buf[0];
+            assert_eq!(value_type, 0);
+            buf.advance(1);
+            let key = string_decode(&mut buf);
+            let value = string_decode(&mut buf);
+            db.insert(key, (value.into(), Some(expire)));
         }
     }
 
+    println!("db: {:?}", db);
+
+    assert_eq!(buf[0], 0xFF);
+    println!("end of file");
+    buf.advance(1);
+
+    let crc = &buf[..8];
+    buf.advance(8);
+    assert!(!buf.has_remaining())
+}
+
+fn string_decode(src: &mut BytesMut) -> String {
+    let len = size_decode(src);
+
+    let s = str::from_utf8(&src[..len]).unwrap().to_string();
+    src.advance(len);
+    s
+}
+
+fn size_decode(src: &mut BytesMut) -> usize {
+    let indicator = (src[0] & 0b1100_0000) >> 6;
+    let b0 = src[0] & 0b0011_1111;
+    match indicator {
+        0b00 | 0b11 => {
+            let size = b0 as usize;
+            src.advance(1);
+            size
+        }
+
+        0b01 => {
+            let size = (b0 as usize) << 8 | (src[1] as usize);
+            src.advance(2);
+            size
+        }
+
+        0b10 => {
+            let size = (b0 as usize) << 24
+                | (src[1] as usize) << 16
+                | (src[2] as usize) << 8
+                | (src[3] as usize);
+
+            src.advance(4);
+            size
+        }
+        _ => unreachable!(),
+    }
 }
 
 #[tokio::test]
@@ -74,6 +145,8 @@ async fn test_parse_dbfile() {
 
 #[tokio::main]
 async fn main() {
+    let db = Arc::new(Mutex::new(HashMap::new()));
+
     let args = std::env::args().collect::<Vec<String>>();
 
     let config = Arc::new(Mutex::new(HashMap::new()));
@@ -86,10 +159,9 @@ async fn main() {
             .lock()
             .unwrap()
             .insert("dbfilename".to_string(), args[4].clone());
-    }
-    let db = Arc::new(Mutex::new(HashMap::new()));
 
-    parse_dbfile("./dump.rdb", db.clone()).await;
+        parse_dbfile("./dump.rdb", db.clone()).await;
+    }
 
     // Uncomment this block to pass the first stage
     let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
