@@ -7,13 +7,12 @@ use std::{
     time::Instant,
 };
 
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 use cmd::{ping::Ping, Command};
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
+    fs::{read_to_string, File}, io::{AsyncReadExt, AsyncWriteExt}, net::TcpListener
 };
 use tokio_util::codec::Framed;
 
@@ -23,6 +22,55 @@ mod parse;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
+pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
+
+async fn parse_dbfile(dbfile: &str, db: DB) {
+    let mut dbfile = File::open(dbfile).await.unwrap();
+    let mut buf = Vec::new();
+    dbfile.read_to_end(&mut buf).await.unwrap();
+    let mut buf = BytesMut::from(&buf[..]);
+    
+    let header = &buf[..9];
+    let header = str::from_utf8(header).unwrap();
+    println!("header: {}", header);
+    buf.advance(9);
+
+    let mut tag = buf[0];
+    assert_eq!(tag, 0xFA);
+    buf.advance(1);
+    while buf.has_remaining() {
+        let name_len = buf[0] & 0b00111111;
+        let name_len = name_len as usize;
+
+        let name = &buf[1..1 + name_len];
+        let name = str::from_utf8(name).unwrap();
+        println!("name: {}", name);
+
+        buf.advance(1 + name_len);
+
+        let value_len = buf[0] & 0b00111111;
+        let value_len = value_len as usize;
+
+        let value = &buf[1..1 + value_len];
+        let value = str::from_utf8(value).unwrap();
+        println!("value: {}", value);
+
+        buf.advance(1 + value_len);
+
+        tag = buf[0];
+        if tag == 0xFE {
+            break;
+        }
+    }
+
+}
+
+#[tokio::test]
+async fn test_parse_dbfile() {
+    let db = Arc::new(Mutex::new(HashMap::new()));
+
+    parse_dbfile("./dump.rdb", db.clone()).await;
+}
 
 #[tokio::main]
 async fn main() {
@@ -39,11 +87,13 @@ async fn main() {
             .unwrap()
             .insert("dbfilename".to_string(), args[4].clone());
     }
+    let db = Arc::new(Mutex::new(HashMap::new()));
+
+    parse_dbfile("./dump.rdb", db.clone()).await;
 
     // Uncomment this block to pass the first stage
     let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
 
-    let db = Arc::new(Mutex::new(HashMap::new()));
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
