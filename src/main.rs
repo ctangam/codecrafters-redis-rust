@@ -2,9 +2,7 @@
 
 use core::str;
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant, UNIX_EPOCH},
+    collections::HashMap, path::{Path, PathBuf}, sync::{Arc, Mutex}, time::{Duration, Instant, UNIX_EPOCH}
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -26,7 +24,7 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
 
-async fn parse_dbfile(dbfile: &str, db: DB) {
+async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
     let mut dbfile = File::open(dbfile).await.unwrap();
     let mut buf = Vec::new();
     dbfile.read_to_end(&mut buf).await.unwrap();
@@ -160,7 +158,8 @@ async fn main() {
             .unwrap()
             .insert("dbfilename".to_string(), args[4].clone());
 
-        parse_dbfile("./dump.rdb", db.clone()).await;
+        let path = PathBuf::from(&args[2]).join(&args[4]).to_path_buf();
+        parse_dbfile(path, db.clone()).await;
     }
 
     // Uncomment this block to pass the first stage
