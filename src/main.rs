@@ -124,10 +124,11 @@ fn size_decode(src: &mut BytesMut) -> usize {
         }
 
         0b10 => {
-            let size = (b0 as usize) << 24
-                | (src[1] as usize) << 16
-                | (src[2] as usize) << 8
-                | (src[3] as usize);
+            let size = (b0 as usize) << 32
+                | (src[1] as usize) << 24
+                | (src[2] as usize) << 16
+                | (src[3] as usize) << 8
+                | (src[4] as usize);
 
             src.advance(4);
             size
@@ -141,6 +142,22 @@ async fn test_parse_dbfile() {
     let db = Arc::new(Mutex::new(HashMap::new()));
 
     parse_dbfile("./dump.rdb", db.clone()).await;
+}
+
+#[test]
+fn test_size_decode() {
+
+    let mut buf = BytesMut::from(&0x0A_u8.to_be_bytes()[..]);
+    let s = size_decode(&mut buf);
+    assert_eq!(s, 10);
+
+    let mut buf = BytesMut::from(&0x42BC_u16.to_be_bytes()[..]);
+    let s = size_decode(&mut buf);
+    assert_eq!(s, 700);
+
+    let mut buf = BytesMut::from(&(0x8000004268_u64 << 24).to_be_bytes()[..]);
+    let s = size_decode(&mut buf);
+    assert_eq!(s, 17000);
 }
 
 #[tokio::main]
