@@ -100,6 +100,7 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
 
 fn string_decode(src: &mut BytesMut) -> String {
     let len = size_decode(src);
+    println!("string len: {}", len);
 
     let s = str::from_utf8(&src[..len]).unwrap().to_string();
     src.advance(len);
