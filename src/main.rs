@@ -229,7 +229,9 @@ async fn main() {
             .insert("dbfilename".to_string(), args[4].clone());
 
         let path = PathBuf::from(&args[2]).join(&args[4]).to_path_buf();
-        parse_dbfile(path, db.clone()).await;
+        if path.exists() {
+            parse_dbfile(path, db.clone()).await;
+        }
     }
 
     // Uncomment this block to pass the first stage
