@@ -310,11 +310,11 @@ async fn main() {
                                 }
                             }
                             Ok(Command::Keys(keys)) => {
-                                let re = Regex::new(&keys.pattern).unwrap();
+                                let (left, right) = keys.pattern.split_once("*").unwrap();
                                 let keys = {
                                     let db = db.lock().unwrap();
                                     db.keys().into_iter().filter(|key| {
-                                        re.captures(key).is_some()
+                                        key.starts_with(left) && key.ends_with(right)
                                     }).map(|key| Frame::Bulk(key.clone().into_bytes().into())).collect::<Vec<_>>()
                                 };
                                 client.send(Frame::Array(keys)).await.unwrap();
@@ -335,4 +335,13 @@ async fn main() {
             }
         }
     }
+}
+
+#[test]
+fn test_glob() {
+    let p = "*".to_string();
+    let (left, right) = p.split_once("*").unwrap();
+    let buf = vec!["foo", "baz"];
+    let result = buf.into_iter().filter(|key| key.starts_with(left) && key.ends_with(right) ).collect::<Vec<_>>();
+    assert_eq!(result, vec!["foo", "baz"]);
 }
