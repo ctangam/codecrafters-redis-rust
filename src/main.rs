@@ -80,7 +80,9 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
                 assert_eq!(value_type, 0);
                 buf.advance(1);
                 let key = string_decode(&mut buf);
+                println!("{key:?}");
                 let value = string_decode(&mut buf);
+                println!("{value:?}");
                 db.insert(key, (value.into(), expire));
             }
         }
