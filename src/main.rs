@@ -67,10 +67,12 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
                 let expire = if buf[0] == 0xFC {
                     buf.advance(1);
                     let value = u64::from_le_bytes(buf[..8].try_into().unwrap());
+                    buf.advance(8);
                     Some(Instant::now() + Duration::from_millis(value))
                 } else if buf[0] == 0xFD {
                     buf.advance(1);
                     let value = u64::from_le_bytes(buf[..4].try_into().unwrap());
+                    buf.advance(4);
                     Some(Instant::now() + Duration::from_secs(value))
                 } else {
                     None
