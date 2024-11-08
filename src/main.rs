@@ -75,6 +75,7 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
                 } else {
                     None
                 };
+                println!("expire: {:?}", expire);
                 let value_type = buf[0];
                 assert_eq!(value_type, 0);
                 buf.advance(1);
@@ -93,6 +94,13 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
 
     let crc = &buf[..8];
     buf.advance(8);
+}
+
+fn list_decode(src: &mut BytesMut) -> Vec<String> {
+    let size = size_decode(src);
+    (0..size)
+        .map(|_| string_decode(src))
+        .collect()
 }
 
 fn string_decode(src: &mut BytesMut) -> String {
