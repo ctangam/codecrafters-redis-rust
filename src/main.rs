@@ -69,11 +69,12 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
                     println!("{value:?} millis");
                     buf.advance(9);
                     let time = UNIX_EPOCH + Duration::from_millis(value);
-                    
-                    if time < SystemTime::now() {
+
+                    let earlier = SystemTime::now();
+                    if time < earlier {
                         Some(Instant::now())
                     } else {
-                        Some(Instant::now() + time.elapsed().unwrap())
+                        Some(Instant::now() + time.duration_since(earlier).unwrap())
                     }
                 } else if buf[0] == 0xFD {
                     let value = u32::from_le_bytes(buf[1..][..4].try_into().unwrap());
