@@ -101,7 +101,6 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
 
     let crc = &buf[..8];
     buf.advance(8);
-    assert!(!buf.has_remaining())
 }
 
 fn string_decode(src: &mut BytesMut) -> String {
