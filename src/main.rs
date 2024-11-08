@@ -12,7 +12,6 @@ use bytes::{Buf, Bytes, BytesMut};
 use cmd::{ping::Ping, Command};
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
-use regex::Regex;
 use tokio::{
     fs::{read_to_string, File},
     io::{AsyncReadExt, AsyncWriteExt},
