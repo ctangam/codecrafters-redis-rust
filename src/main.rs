@@ -64,31 +64,23 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
             println!("expire_size: {}", expire_size);
 
             for _ in 0..size {
-                let value_type = buf[0];
-                assert_eq!(value_type, 0);
-                buf.advance(1);
-                let key = string_decode(&mut buf);
-                let value = string_decode(&mut buf);
-                db.insert(key, (value.into(), None));
-            }
-    
-            for _ in 0..expire_size {
-                let expire_type = buf[0];
-                buf.advance(1);
-                let expire = if expire_type == 0xFC {
+                let expire = if buf[0] == 0xFC {
+                    buf.advance(1);
                     let value = u64::from_le_bytes(buf[..8].try_into().unwrap());
-                    Instant::now() + Duration::from_millis(value)
-                } else {
+                    Some(Instant::now() + Duration::from_millis(value))
+                } else if buf[0] == 0xFD {
+                    buf.advance(1);
                     let value = u64::from_le_bytes(buf[..4].try_into().unwrap());
-                    Instant::now() + Duration::from_secs(value)
+                    Some(Instant::now() + Duration::from_secs(value))
+                } else {
+                    None
                 };
-    
                 let value_type = buf[0];
                 assert_eq!(value_type, 0);
                 buf.advance(1);
                 let key = string_decode(&mut buf);
                 let value = string_decode(&mut buf);
-                db.insert(key, (value.into(), Some(expire)));
+                db.insert(key, (value.into(), expire));
             }
         }
     }
