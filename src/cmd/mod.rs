@@ -3,6 +3,7 @@ use std::time::Duration;
 use config_get::ConfigGet;
 use echo::Echo;
 use get::Get;
+use keys::Keys;
 use ping::Ping;
 use set::Set;
 use unknown::Unknown;
@@ -15,6 +16,7 @@ pub mod set;
 pub mod get;
 pub mod unknown;
 pub mod config_get;
+pub mod keys;
 
 pub enum Command {
     Ping(Ping),
@@ -23,6 +25,7 @@ pub enum Command {
     Get(Get),
     Unknown(Unknown),
     ConfigGet(ConfigGet),
+    Keys(Keys),
 }
 
 impl Command {
@@ -40,6 +43,7 @@ impl Command {
                 key: parse.next_string()?,
             }),
             "config" => Command::ConfigGet(ConfigGet::parse_frames(&mut parse)?),
+            "keys" => Command::Keys(Keys::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.

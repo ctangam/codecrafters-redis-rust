@@ -5,13 +5,14 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::{Duration, Instant, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 use bytes::{Buf, Bytes, BytesMut};
 use cmd::{ping::Ping, Command};
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
+use regex::Regex;
 use tokio::{
     fs::{read_to_string, File},
     io::{AsyncReadExt, AsyncWriteExt},
@@ -307,6 +308,16 @@ async fn main() {
                                 } else {
                                     client.send(Frame::Null).await.unwrap();
                                 }
+                            }
+                            Ok(Command::Keys(keys)) => {
+                                let re = Regex::new(&keys.pattern).unwrap();
+                                let keys = {
+                                    let db = db.lock().unwrap();
+                                    db.keys().into_iter().filter(|key| {
+                                        re.captures(key).is_some()
+                                    }).map(|key| Frame::Bulk(key.clone().into_bytes().into())).collect::<Vec<_>>()
+                                };
+                                client.send(Frame::Array(keys)).await.unwrap();
                             }
                             Ok(Command::Unknown(_)) => {
                                 continue;
