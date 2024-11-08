@@ -65,21 +65,27 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
 
             for _ in 0..size {
                 let expire = if buf[0] == 0xFC {
-                    buf.advance(1);
-                    let value = u64::from_le_bytes(buf[..8].try_into().unwrap());
-                    println!("{value:?}");
-                    buf.advance(8);
+                    let value = u64::from_le_bytes(buf[1..][..8].try_into().unwrap());
+                    println!("{value:?} millis");
+                    buf.advance(9);
                     let time = UNIX_EPOCH + Duration::from_millis(value);
-
-                    Some(Instant::now() + time.elapsed().unwrap())
+                    
+                    if time < SystemTime::now() {
+                        Some(Instant::now())
+                    } else {
+                        Some(Instant::now() + time.elapsed().unwrap())
+                    }
                 } else if buf[0] == 0xFD {
-                    buf.advance(1);
-                    let value = u32::from_le_bytes(buf[..4].try_into().unwrap());
-                    println!("{value:?}");
-                    buf.advance(4);
+                    let value = u32::from_le_bytes(buf[1..][..4].try_into().unwrap());
+                    println!("{value:?} secs");
+                    buf.advance(5);
                     let time = UNIX_EPOCH + Duration::from_secs(value as u64);
 
-                    Some(Instant::now() + time.elapsed().unwrap())
+                    if time < SystemTime::now() {
+                        Some(Instant::now())
+                    } else {
+                        Some(Instant::now() + time.elapsed().unwrap())
+                    }
                 } else {
                     None
                 };
@@ -170,11 +176,15 @@ fn size_decode(src: &mut BytesMut) -> usize {
     }
 }
 
-#[tokio::test]
-async fn test_parse_dbfile() {
-    let db = Arc::new(Mutex::new(HashMap::new()));
+#[test]
+fn test_expire() {
+    let value = u32::from_le_bytes([0x52, 0xED, 0x2A, 0x66]);
+    let time = UNIX_EPOCH + Duration::from_secs(value as u64);
 
-    parse_dbfile("./dump.rdb", db.clone()).await;
+    let expire = Some(Instant::now() + time.elapsed().unwrap());
+
+    println!("{expire:?}");
+
 }
 
 #[test]
