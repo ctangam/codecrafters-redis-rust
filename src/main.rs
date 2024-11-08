@@ -2,7 +2,10 @@
 
 use core::str;
 use std::{
-    collections::HashMap, path::{Path, PathBuf}, sync::{Arc, Mutex}, time::{Duration, Instant, UNIX_EPOCH}
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -99,19 +102,39 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
 }
 
 fn string_decode(src: &mut BytesMut) -> String {
-    let len = size_decode(src);
-    println!("string len: {}", len);
+    match src[0] {
+        0xC0 => {
+            let s = src[1].to_string();
+            src.advance(2);
+            s
+        }
 
-    let s = str::from_utf8(&src[..len]).unwrap().to_string();
-    src.advance(len);
-    s
+        0xC1 => {
+            let s = u16::from_le_bytes([src[1], src[2]]).to_string();
+            src.advance(3);
+            s
+        }
+
+        0xC2 => {
+            let s = u32::from_le_bytes([src[1], src[2], src[3], src[4]]).to_string();
+            src.advance(5);
+            s
+        }
+
+        _ => {
+            let len = size_decode(src);
+            let s = String::from_utf8(src[..len].to_vec()).unwrap();
+            src.advance(len);
+            s
+        }
+    }
 }
 
 fn size_decode(src: &mut BytesMut) -> usize {
     let indicator = (src[0] & 0b1100_0000) >> 6;
     let b0 = src[0] & 0b0011_1111;
     match indicator {
-        0b00 | 0b11 => {
+        0b00 => {
             let size = b0 as usize;
             src.advance(1);
             size
@@ -133,6 +156,7 @@ fn size_decode(src: &mut BytesMut) -> usize {
             src.advance(4);
             size
         }
+
         _ => unreachable!(),
     }
 }
@@ -145,8 +169,33 @@ async fn test_parse_dbfile() {
 }
 
 #[test]
-fn test_size_decode() {
+fn test_string_decode() {
+    let encoded = vec![
+        0x0D, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20, 0x57, 0x6F, 0x72, 0x6C, 0x64, 0x21,
+    ];
+    let mut buf = BytesMut::from(&encoded[..]);
+    let s = string_decode(&mut buf);
+    assert_eq!(s, "Hello, World!");
 
+
+    let encoded = vec![0xC0, 0x7B];
+    let mut buf = BytesMut::from(&encoded[..]);
+    let s = string_decode(&mut buf);
+    assert_eq!(s, "123");
+
+    let encoded = vec![0xC1, 0x39, 0x30];
+    let mut buf = BytesMut::from(&encoded[..]);
+    let s = string_decode(&mut buf);
+    assert_eq!(s, "12345");
+
+    let encoded = vec![0xC2, 0x87, 0xD6, 0x12, 0x00];
+    let mut buf = BytesMut::from(&encoded[..]);
+    let s = string_decode(&mut buf);
+    assert_eq!(s, "1234567");
+}
+
+#[test]
+fn test_size_decode() {
     let mut buf = BytesMut::from(&0x0A_u8.to_be_bytes()[..]);
     let s = size_decode(&mut buf);
     assert_eq!(s, 10);
