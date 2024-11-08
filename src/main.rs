@@ -5,7 +5,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -68,23 +68,24 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
                     buf.advance(1);
                     let value = u64::from_le_bytes(buf[..8].try_into().unwrap());
                     buf.advance(8);
-                    Some(Instant::now() + Duration::from_millis(value))
+                    let time = UNIX_EPOCH + Duration::from_millis(value);
+
+                    Some(Instant::now() + time.elapsed().unwrap())
                 } else if buf[0] == 0xFD {
                     buf.advance(1);
                     let value = u64::from_le_bytes(buf[..4].try_into().unwrap());
                     buf.advance(4);
-                    Some(Instant::now() + Duration::from_secs(value))
+                    let time = UNIX_EPOCH + Duration::from_secs(value);
+                    
+                    Some(Instant::now() + time.elapsed().unwrap())
                 } else {
                     None
                 };
-                println!("expire: {:?}", expire);
                 let value_type = buf[0];
                 assert_eq!(value_type, 0);
                 buf.advance(1);
                 let key = string_decode(&mut buf);
-                println!("{key:?}");
                 let value = string_decode(&mut buf);
-                println!("{value:?}");
                 db.insert(key, (value.into(), expire));
             }
         }
