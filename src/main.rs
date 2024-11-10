@@ -112,9 +112,7 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
 
 fn list_decode(src: &mut BytesMut) -> Vec<String> {
     let size = size_decode(src);
-    (0..size)
-        .map(|_| string_decode(src))
-        .collect()
+    (0..size).map(|_| string_decode(src)).collect()
 }
 
 fn string_decode(src: &mut BytesMut) -> String {
@@ -185,7 +183,6 @@ fn test_expire() {
     let expire = Some(Instant::now() + time.elapsed().unwrap());
 
     println!("{expire:?}");
-
 }
 
 #[test]
@@ -196,7 +193,6 @@ fn test_string_decode() {
     let mut buf = BytesMut::from(&encoded[..]);
     let s = string_decode(&mut buf);
     assert_eq!(s, "Hello, World!");
-
 
     let encoded = vec![0xC0, 0x7B];
     let mut buf = BytesMut::from(&encoded[..]);
@@ -338,11 +334,23 @@ async fn main() {
                                 let (left, right) = keys.pattern.split_once("*").unwrap();
                                 let keys = {
                                     let db = db.lock().unwrap();
-                                    db.keys().into_iter().filter(|key| {
-                                        key.starts_with(left) && key.ends_with(right)
-                                    }).map(|key| Frame::Bulk(key.clone().into_bytes().into())).collect::<Vec<_>>()
+                                    db.keys()
+                                        .into_iter()
+                                        .filter(|key| key.starts_with(left) && key.ends_with(right))
+                                        .map(|key| Frame::Bulk(key.clone().into_bytes().into()))
+                                        .collect::<Vec<_>>()
                                 };
                                 client.send(Frame::Array(keys)).await.unwrap();
+                            }
+                            Ok(Command::Info(info)) => {
+                                if info.replication {
+                                    client
+                                        .send(Frame::Bulk(
+                                            format!("role:master").into_bytes().into(),
+                                        ))
+                                        .await
+                                        .unwrap();
+                                }
                             }
                             Ok(Command::Unknown(_)) => {
                                 continue;
@@ -367,6 +375,9 @@ fn test_glob() {
     let p = "*".to_string();
     let (left, right) = p.split_once("*").unwrap();
     let buf = vec!["foo", "baz"];
-    let result = buf.into_iter().filter(|key| key.starts_with(left) && key.ends_with(right) ).collect::<Vec<_>>();
+    let result = buf
+        .into_iter()
+        .filter(|key| key.starts_with(left) && key.ends_with(right))
+        .collect::<Vec<_>>();
     assert_eq!(result, vec!["foo", "baz"]);
 }
