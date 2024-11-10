@@ -252,8 +252,14 @@ async fn main() {
         }
     }
 
+    let address = if args.len() > 2 && args[1] == "--port" {
+        format!("127.0.0.1:{}", args[2])
+    } else {
+        format!("127.0.0.1:6379")
+    };
+
     // Uncomment this block to pass the first stage
-    let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+    let listener = TcpListener::bind(address).await.unwrap();
 
     loop {
         match listener.accept().await {
