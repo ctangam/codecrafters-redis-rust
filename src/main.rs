@@ -9,6 +9,7 @@ use std::{
 };
 
 use bytes::{Buf, Bytes, BytesMut};
+use clap::Parser;
 use cmd::{ping::Ping, Command};
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
@@ -225,36 +226,53 @@ fn test_size_decode() {
     assert_eq!(s, 17000);
 }
 
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(long)]
+    dir: Option<PathBuf>,
+    #[arg(long)]
+    dbfilename: Option<String>,
+
+    #[arg(long, default_value_t = 6379)]
+    port: u32,
+    #[arg(long)]
+    replicaof: Option<String>,
+}
+
 #[tokio::main]
 async fn main() {
+    let args = Args::parse();
+    let mut role: &'static str = "master";
     let db = Arc::new(Mutex::new(HashMap::new()));
-
-    let args = std::env::args().collect::<Vec<String>>();
-
     let config = Arc::new(Mutex::new(HashMap::new()));
-    if args.len() > 3 && (args[1] == "--dir" || args[3] == "--dbfilename") {
-        config
-            .lock()
-            .unwrap()
-            .insert("dir".to_string(), args[2].clone());
-        config
-            .lock()
-            .unwrap()
-            .insert("dbfilename".to_string(), args[4].clone());
 
-        let path = PathBuf::from(&args[2]).join(&args[4]).to_path_buf();
-        if path.exists() {
-            parse_dbfile(path, db.clone()).await;
+    if let Some(dir) = args.dir.as_deref() {
+        config
+            .lock()
+            .unwrap()
+            .insert("dir".to_string(), dir.to_string_lossy().to_string());
+        if let Some(dbfilename) = args.dbfilename.as_deref() {
+            config
+                .lock()
+                .unwrap()
+                .insert("dbfilename".to_string(), dbfilename.to_string());
+
+            let path = dir.join(dbfilename);
+            if path.exists() {
+                parse_dbfile(path, db.clone()).await;
+            }
         }
     }
 
-    let address = if args.len() > 2 && args[1] == "--port" {
-        format!("127.0.0.1:{}", args[2])
+    let address = format!("127.0.0.1:{}", args.port);
+
+    let master = if let Some(replicaof) = args.replicaof.as_deref() {
+        role = "slave";
+        replicaof.split_once(" ")
     } else {
-        format!("127.0.0.1:6379")
+        None
     };
 
-    // Uncomment this block to pass the first stage
     let listener = TcpListener::bind(address).await.unwrap();
 
     loop {
@@ -346,7 +364,7 @@ async fn main() {
                                 if info.replication {
                                     client
                                         .send(Frame::Bulk(
-                                            format!("role:master").into_bytes().into(),
+                                            format!("role:{role}").into_bytes().into(),
                                         ))
                                         .await
                                         .unwrap();
