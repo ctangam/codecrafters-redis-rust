@@ -10,12 +10,12 @@ use std::{
 
 use bytes::{Buf, Bytes, BytesMut};
 use clap::Parser;
-use cmd::{ping::Ping, Command};
+use cmd::{Command};
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
-    fs::{read_to_string, File},
-    io::{AsyncReadExt, AsyncWriteExt},
+    fs::{File},
+    io::{AsyncReadExt},
     net::TcpListener,
 };
 use tokio_util::codec::Framed;
