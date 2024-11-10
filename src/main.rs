@@ -10,14 +10,10 @@ use std::{
 
 use bytes::{Buf, Bytes, BytesMut};
 use clap::Parser;
-use cmd::{Command};
+use cmd::Command;
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
-use tokio::{
-    fs::{File},
-    io::{AsyncReadExt},
-    net::TcpListener,
-};
+use tokio::{fs::File, io::AsyncReadExt, net::TcpListener};
 use tokio_util::codec::Framed;
 
 mod cmd;
@@ -243,6 +239,8 @@ struct Args {
 async fn main() {
     let args = Args::parse();
     let mut role: &'static str = "master";
+    let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+    let master_repl_offset = 0;
     let db = Arc::new(Mutex::new(HashMap::new()));
     let config = Arc::new(Mutex::new(HashMap::new()));
 
@@ -364,7 +362,7 @@ async fn main() {
                                 if info.replication {
                                     client
                                         .send(Frame::Bulk(
-                                            format!("role:{role}").into_bytes().into(),
+                                            format!("role:{role}\r\nmaster_repl_offset:{master_repl_offset}\r\nmaster_replid:{master_replid}").into_bytes().into(),
                                         ))
                                         .await
                                         .unwrap();

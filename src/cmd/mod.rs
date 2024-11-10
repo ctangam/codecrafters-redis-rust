@@ -1,4 +1,3 @@
-
 use config_get::ConfigGet;
 use echo::Echo;
 use get::Get;
@@ -8,10 +7,7 @@ use ping::Ping;
 use set::Set;
 use unknown::Unknown;
 
-use crate::{
-    frame::Frame,
-    parse::{Parse},
-};
+use crate::{frame::Frame, parse::Parse};
 
 pub mod config_get;
 pub mod echo;
