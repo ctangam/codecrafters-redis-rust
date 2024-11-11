@@ -11,7 +11,7 @@ use std::{
 
 use bytes::{Buf, Bytes, BytesMut};
 use clap::Parser;
-use cmd::Command;
+use cmd::{replconf, Command};
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
@@ -422,6 +422,14 @@ async fn main() {
                                         .send(Frame::Bulk(
                                             format!("role:{role}\r\nmaster_repl_offset:{master_repl_offset}\r\nmaster_replid:{master_replid}").into_bytes().into(),
                                         ))
+                                        .await
+                                        .unwrap();
+                                }
+                            }
+                            Ok(Command::Replconf(replconf)) => {
+                                if replconf.port.is_some() || replconf.capa.is_some() {
+                                    client
+                                        .send(Frame::Simple("OK".to_string()))
                                         .await
                                         .unwrap();
                                 }
