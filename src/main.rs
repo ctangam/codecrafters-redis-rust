@@ -13,7 +13,11 @@ use clap::Parser;
 use cmd::Command;
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
-use tokio::{fs::File, io::AsyncReadExt, net::TcpListener};
+use tokio::{
+    fs::File,
+    io::AsyncReadExt,
+    net::{TcpListener, TcpStream},
+};
 use tokio_util::codec::Framed;
 
 mod cmd;
@@ -104,11 +108,11 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
     println!("end of file");
     buf.advance(1);
 
-    let crc = &buf[..8];
+    let _crc = &buf[..8];
     buf.advance(8);
 }
 
-fn list_decode(src: &mut BytesMut) -> Vec<String> {
+fn _list_decode(src: &mut BytesMut) -> Vec<String> {
     let size = size_decode(src);
     (0..size).map(|_| string_decode(src)).collect()
 }
@@ -271,6 +275,17 @@ async fn main() {
     } else {
         None
     };
+
+    if let Some((host, port)) = master {
+        let address = format!("{}:{}", host, port);
+        let mut client = Framed::new(TcpStream::connect(address).await.unwrap(), FrameCodec);
+        client
+            .send(Frame::Array(vec![Frame::Bulk(
+                "PING".to_string().into_bytes().into(),
+            )]))
+            .await
+            .unwrap();
+    }
 
     let listener = TcpListener::bind(address).await.unwrap();
 
