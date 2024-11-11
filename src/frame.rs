@@ -3,7 +3,7 @@ use core::str;
 use bytes::{Buf, Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Frame {
     Simple(String),
     Error(String),

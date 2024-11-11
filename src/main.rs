@@ -5,7 +5,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH}, vec,
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -285,6 +285,28 @@ async fn main() {
             )]))
             .await
             .unwrap();
+
+        if let Some(Ok(Frame::Simple(s))) = client.next().await {
+            if s == "PONG" {
+                client.send(Frame::Array(vec![
+                    Frame::Bulk("REPLCONF".to_string().into_bytes().into()),
+                    Frame::Bulk("listening-port".to_string().into_bytes().into()),
+                    Frame::Bulk(args.port.to_string().into_bytes().into()),
+                ])).await.unwrap();
+
+                let reply = client.next().await.unwrap().unwrap();
+                assert_eq!(reply, Frame::Simple("OK".to_string()));
+
+                client.send(Frame::Array(vec![
+                    Frame::Bulk("REPLCONF".to_string().into_bytes().into()),
+                    Frame::Bulk("capa".to_string().into_bytes().into()),
+                    Frame::Bulk("psync2".to_string().into_bytes().into()),
+                ])).await.unwrap();
+
+                let reply = client.next().await.unwrap().unwrap();
+                assert_eq!(reply, Frame::Simple("OK".to_string()));
+            }
+        }
     }
 
     let listener = TcpListener::bind(address).await.unwrap();
