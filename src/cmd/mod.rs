@@ -4,6 +4,7 @@ use get::Get;
 use info::Info;
 use keys::Keys;
 use ping::Ping;
+use psync::Psync;
 use replconf::Replconf;
 use set::Set;
 use unknown::Unknown;
@@ -19,6 +20,7 @@ pub mod ping;
 pub mod set;
 pub mod unknown;
 pub mod replconf;
+pub mod psync;
 
 pub enum Command {
     Ping(Ping),
@@ -30,6 +32,7 @@ pub enum Command {
     Keys(Keys),
     Info(Info),
     Replconf(Replconf),
+    Psync(Psync),
 }
 
 impl Command {
@@ -50,6 +53,7 @@ impl Command {
             "keys" => Command::Keys(Keys::parse_frames(&mut parse)?),
             "info" => Command::Info(Info::parse_frames(&mut parse)?),
             "replconf" => Command::Replconf(Replconf::parse_frames(&mut parse)?),
+            "psync" => Command::Psync(Psync::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.

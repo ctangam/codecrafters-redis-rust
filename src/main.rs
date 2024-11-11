@@ -322,7 +322,7 @@ async fn main() {
             ])).await.unwrap();
 
         let reply = client.next().await.unwrap().unwrap();
-        let replid = if let Frame::Simple(s) = &reply {
+        let _replid = if let Frame::Simple(s) = &reply {
             s.split_once(" ").unwrap().1
         } else {
             panic!()
@@ -433,6 +433,16 @@ async fn main() {
                                         .await
                                         .unwrap();
                                 }
+                            }
+                            Ok(Command::Psync(_)) => {
+                                client
+                                    .send(Frame::Simple(format!(
+                                        "FULLRESYNC {repl_id} {repl_offset}",
+                                        repl_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
+                                        repl_offset = "0",
+                                    )))
+                                    .await
+                                    .unwrap();
                             }
                             Ok(Command::Unknown(_)) => {
                                 continue;
