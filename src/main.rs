@@ -5,7 +5,8 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH}, vec,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    vec,
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -286,27 +287,46 @@ async fn main() {
             .await
             .unwrap();
 
-        if let Some(Ok(Frame::Simple(s))) = client.next().await {
-            if s == "PONG" {
-                client.send(Frame::Array(vec![
-                    Frame::Bulk("REPLCONF".to_string().into_bytes().into()),
-                    Frame::Bulk("listening-port".to_string().into_bytes().into()),
-                    Frame::Bulk(args.port.to_string().into_bytes().into()),
-                ])).await.unwrap();
+        let reply = client.next().await.unwrap().unwrap();
+        assert_eq!(reply, Frame::Simple("PONG".to_string()));
 
-                let reply = client.next().await.unwrap().unwrap();
-                assert_eq!(reply, Frame::Simple("OK".to_string()));
+        client
+            .send(Frame::Array(vec![
+                Frame::Bulk("REPLCONF".to_string().into_bytes().into()),
+                Frame::Bulk("listening-port".to_string().into_bytes().into()),
+                Frame::Bulk(args.port.to_string().into_bytes().into()),
+            ]))
+            .await
+            .unwrap();
 
-                client.send(Frame::Array(vec![
-                    Frame::Bulk("REPLCONF".to_string().into_bytes().into()),
-                    Frame::Bulk("capa".to_string().into_bytes().into()),
-                    Frame::Bulk("psync2".to_string().into_bytes().into()),
-                ])).await.unwrap();
+        let reply = client.next().await.unwrap().unwrap();
+        assert_eq!(reply, Frame::Simple("OK".to_string()));
 
-                let reply = client.next().await.unwrap().unwrap();
-                assert_eq!(reply, Frame::Simple("OK".to_string()));
-            }
-        }
+        client
+            .send(Frame::Array(vec![
+                Frame::Bulk("REPLCONF".to_string().into_bytes().into()),
+                Frame::Bulk("capa".to_string().into_bytes().into()),
+                Frame::Bulk("psync2".to_string().into_bytes().into()),
+            ]))
+            .await
+            .unwrap();
+
+        let reply = client.next().await.unwrap().unwrap();
+        assert_eq!(reply, Frame::Simple("OK".to_string()));
+
+        client
+            .send(Frame::Array(vec![
+                Frame::Bulk("PSYNC".to_string().into_bytes().into()),
+                Frame::Bulk("?".to_string().into_bytes().into()),
+                Frame::Bulk("-1".to_string().into_bytes().into()),
+            ])).await.unwrap();
+
+        let reply = client.next().await.unwrap().unwrap();
+        let replid = if let Frame::Simple(s) = &reply {
+            s.split_once(" ").unwrap().1
+        } else {
+            panic!()
+        };
     }
 
     let listener = TcpListener::bind(address).await.unwrap();
