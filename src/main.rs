@@ -82,10 +82,11 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
                     buf.advance(5);
                     let time = UNIX_EPOCH + Duration::from_secs(value as u64);
 
-                    if time < SystemTime::now() {
+                    let earlier = SystemTime::now();
+                    if time < earlier {
                         Some(Instant::now())
                     } else {
-                        Some(Instant::now() + time.elapsed().unwrap())
+                        Some(Instant::now() + time.duration_since(earlier).unwrap())
                     }
                 } else {
                     None
