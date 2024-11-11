@@ -9,14 +9,11 @@ use std::{
 };
 
 use bytes::{Buf, Bytes, BytesMut};
-use cmd::{ping::Ping, Command};
+use clap::Parser;
+use cmd::Command;
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
-use tokio::{
-    fs::{read_to_string, File},
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
-};
+use tokio::{fs::File, io::AsyncReadExt, net::TcpListener};
 use tokio_util::codec::Framed;
 
 mod cmd;
@@ -113,9 +110,7 @@ async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
 
 fn list_decode(src: &mut BytesMut) -> Vec<String> {
     let size = size_decode(src);
-    (0..size)
-        .map(|_| string_decode(src))
-        .collect()
+    (0..size).map(|_| string_decode(src)).collect()
 }
 
 fn string_decode(src: &mut BytesMut) -> String {
@@ -186,7 +181,6 @@ fn test_expire() {
     let expire = Some(Instant::now() + time.elapsed().unwrap());
 
     println!("{expire:?}");
-
 }
 
 #[test]
@@ -197,7 +191,6 @@ fn test_string_decode() {
     let mut buf = BytesMut::from(&encoded[..]);
     let s = string_decode(&mut buf);
     assert_eq!(s, "Hello, World!");
-
 
     let encoded = vec![0xC0, 0x7B];
     let mut buf = BytesMut::from(&encoded[..]);
@@ -230,31 +223,56 @@ fn test_size_decode() {
     assert_eq!(s, 17000);
 }
 
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(long)]
+    dir: Option<PathBuf>,
+    #[arg(long)]
+    dbfilename: Option<String>,
+
+    #[arg(long, default_value_t = 6379)]
+    port: u32,
+    #[arg(long)]
+    replicaof: Option<String>,
+}
+
 #[tokio::main]
 async fn main() {
+    let args = Args::parse();
+    let mut role: &'static str = "master";
+    let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+    let master_repl_offset = 0;
     let db = Arc::new(Mutex::new(HashMap::new()));
-
-    let args = std::env::args().collect::<Vec<String>>();
-
     let config = Arc::new(Mutex::new(HashMap::new()));
-    if args.len() > 2 && (args[1] == "--dir" || args[3] == "--dbfilename") {
-        config
-            .lock()
-            .unwrap()
-            .insert("dir".to_string(), args[2].clone());
-        config
-            .lock()
-            .unwrap()
-            .insert("dbfilename".to_string(), args[4].clone());
 
-        let path = PathBuf::from(&args[2]).join(&args[4]).to_path_buf();
-        if path.exists() {
-            parse_dbfile(path, db.clone()).await;
+    if let Some(dir) = args.dir.as_deref() {
+        config
+            .lock()
+            .unwrap()
+            .insert("dir".to_string(), dir.to_string_lossy().to_string());
+        if let Some(dbfilename) = args.dbfilename.as_deref() {
+            config
+                .lock()
+                .unwrap()
+                .insert("dbfilename".to_string(), dbfilename.to_string());
+
+            let path = dir.join(dbfilename);
+            if path.exists() {
+                parse_dbfile(path, db.clone()).await;
+            }
         }
     }
 
-    // Uncomment this block to pass the first stage
-    let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+    let address = format!("127.0.0.1:{}", args.port);
+
+    let master = if let Some(replicaof) = args.replicaof.as_deref() {
+        role = "slave";
+        replicaof.split_once(" ")
+    } else {
+        None
+    };
+
+    let listener = TcpListener::bind(address).await.unwrap();
 
     loop {
         match listener.accept().await {
@@ -333,11 +351,23 @@ async fn main() {
                                 let (left, right) = keys.pattern.split_once("*").unwrap();
                                 let keys = {
                                     let db = db.lock().unwrap();
-                                    db.keys().into_iter().filter(|key| {
-                                        key.starts_with(left) && key.ends_with(right)
-                                    }).map(|key| Frame::Bulk(key.clone().into_bytes().into())).collect::<Vec<_>>()
+                                    db.keys()
+                                        .into_iter()
+                                        .filter(|key| key.starts_with(left) && key.ends_with(right))
+                                        .map(|key| Frame::Bulk(key.clone().into_bytes().into()))
+                                        .collect::<Vec<_>>()
                                 };
                                 client.send(Frame::Array(keys)).await.unwrap();
+                            }
+                            Ok(Command::Info(info)) => {
+                                if info.replication {
+                                    client
+                                        .send(Frame::Bulk(
+                                            format!("role:{role}\r\nmaster_repl_offset:{master_repl_offset}\r\nmaster_replid:{master_replid}").into_bytes().into(),
+                                        ))
+                                        .await
+                                        .unwrap();
+                                }
                             }
                             Ok(Command::Unknown(_)) => {
                                 continue;
@@ -362,6 +392,9 @@ fn test_glob() {
     let p = "*".to_string();
     let (left, right) = p.split_once("*").unwrap();
     let buf = vec!["foo", "baz"];
-    let result = buf.into_iter().filter(|key| key.starts_with(left) && key.ends_with(right) ).collect::<Vec<_>>();
+    let result = buf
+        .into_iter()
+        .filter(|key| key.starts_with(left) && key.ends_with(right))
+        .collect::<Vec<_>>();
     assert_eq!(result, vec!["foo", "baz"]);
 }

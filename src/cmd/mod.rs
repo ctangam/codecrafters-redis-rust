@@ -1,22 +1,22 @@
-use std::time::Duration;
-
 use config_get::ConfigGet;
 use echo::Echo;
 use get::Get;
+use info::Info;
 use keys::Keys;
 use ping::Ping;
 use set::Set;
 use unknown::Unknown;
 
-use crate::{frame::Frame, parse::{Parse, ParseError}};
+use crate::{frame::Frame, parse::Parse};
 
-pub mod ping;
-pub mod echo;
-pub mod set;
-pub mod get;
-pub mod unknown;
 pub mod config_get;
+pub mod echo;
+pub mod get;
+pub mod info;
 pub mod keys;
+pub mod ping;
+pub mod set;
+pub mod unknown;
 
 pub enum Command {
     Ping(Ping),
@@ -26,6 +26,7 @@ pub enum Command {
     Unknown(Unknown),
     ConfigGet(ConfigGet),
     Keys(Keys),
+    Info(Info),
 }
 
 impl Command {
@@ -44,6 +45,7 @@ impl Command {
             }),
             "config" => Command::ConfigGet(ConfigGet::parse_frames(&mut parse)?),
             "keys" => Command::Keys(Keys::parse_frames(&mut parse)?),
+            "info" => Command::Info(Info::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.

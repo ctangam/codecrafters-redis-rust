@@ -33,9 +33,7 @@ impl Parse {
     }
 
     fn next(&mut self) -> Result<Frame, ParseError> {
-        self.parts
-            .next()
-            .ok_or(ParseError::EndOfStream)
+        self.parts.next().ok_or(ParseError::EndOfStream)
     }
 
     pub fn next_string(&mut self) -> Result<String, ParseError> {
@@ -85,8 +83,6 @@ impl Parse {
             Err("protocol error; expected end of frame, but there was more".into())
         }
     }
-
-    
 }
 
 impl From<String> for ParseError {

@@ -38,11 +38,6 @@ impl Set {
             Err(err) => return Err(err.into()),
         };
 
-        Ok(Set {
-            key,
-            value,
-            expire,
-        })
-
+        Ok(Set { key, value, expire })
     }
 }
