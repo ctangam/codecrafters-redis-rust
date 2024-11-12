@@ -445,6 +445,7 @@ async fn main() {
                                 if replconf.port.is_some() {
                                     let peer_addr =
                                         format!("{}:{}", addr.ip(), replconf.port.unwrap());
+                                    println!("new replica: {}", peer_addr);
                                     replicas.lock().unwrap().push(peer_addr);
                                     client.send(Frame::Simple("OK".to_string())).await.unwrap();
                                 }
