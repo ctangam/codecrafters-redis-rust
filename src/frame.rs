@@ -11,6 +11,7 @@ pub enum Frame {
     Bulk(Bytes),
     Null,
     Array(Vec<Frame>),
+    File(Bytes),
 }
 
 pub struct FrameCodec;
@@ -162,6 +163,13 @@ impl Encoder<Frame> for FrameCodec {
                 for frame in frames {
                     self.encode(frame, dst)?;
                 }
+            }
+            Frame::File(content) => {
+                dst.extend_from_slice(b"$");
+                let len = content.len();
+                dst.extend_from_slice(len.to_string().as_bytes());
+                dst.extend_from_slice(b"\r\n");
+                dst.extend_from_slice(&content[..]);
             }
             _ => unimplemented!(),
         }

@@ -28,3 +28,4 @@ futures-util = { version = "0.3.31", features = ["sink"] }
 thiserror = "1.0.32"                                # error handling
 tokio = { version = "1.23.0", features = ["full"] } # async networking
 tokio-util = { version = "0.7.12", features = ["codec"] }
+hex = "0.4.3"
