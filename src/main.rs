@@ -442,10 +442,13 @@ async fn main() {
                                 }
                             }
                             Ok(Command::Replconf(replconf)) => {
-                                if replconf.port.is_some() || replconf.capa.is_some() {
+                                if replconf.port.is_some() {
                                     let peer_addr =
                                         format!("{}:{}", addr.ip(), replconf.port.unwrap());
                                     replicas.lock().unwrap().push(peer_addr);
+                                    client.send(Frame::Simple("OK".to_string())).await.unwrap();
+                                }
+                                if replconf.capa.is_some() {
                                     client.send(Frame::Simple("OK".to_string())).await.unwrap();
                                 }
                             }
