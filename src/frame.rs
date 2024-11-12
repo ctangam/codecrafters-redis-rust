@@ -85,7 +85,12 @@ impl Decoder for FrameCodec {
                 let mut buffer = vec![0; len];
                 buffer.copy_from_slice(&src[i + 2..i + 2 + len]);
 
-                src.advance(i + 2 + len + 2);
+                if src[i + 2 + len] != b'\r' {
+                    src.advance(i + 2 + len);
+                } else {
+                    src.advance(i + 2 + len + 2);
+                }
+                
                 Frame::Bulk(Bytes::from(buffer))
             }
             b'*' => {
