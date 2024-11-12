@@ -85,7 +85,7 @@ impl Decoder for FrameCodec {
                 let mut buffer = vec![0; len];
                 buffer.copy_from_slice(&src[i + 2..i + 2 + len]);
 
-                if src[i + 2 + len] != b'\r' {
+                if src.remaining() < i + 2 + len + 2 {
                     src.advance(i + 2 + len);
                 } else {
                     src.advance(i + 2 + len + 2);
