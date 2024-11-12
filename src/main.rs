@@ -250,6 +250,8 @@ async fn main() {
     let master_repl_offset = 0;
     let db = Arc::new(Mutex::new(HashMap::new()));
     let config = Arc::new(Mutex::new(HashMap::new()));
+    let replicas: Arc<tokio::sync::Mutex<Vec<Framed<TcpStream, FrameCodec>>>> =
+        Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
     if let Some(dir) = args.dir.as_deref() {
         config
@@ -330,15 +332,37 @@ async fn main() {
         } else {
             panic!()
         };
+
+        let db = db.clone();
+        tokio::spawn(async move {
+            loop {
+                let frame = client.next().await.unwrap().unwrap();
+                match Command::from(frame) {
+                    Ok(Command::Set(set)) => {
+                        let expires = set
+                            .expire
+                            .and_then(|expire| Instant::now().checked_add(expire));
+                        {
+                            let mut db = db.lock().unwrap();
+                            db.insert(set.key, (set.value, expires));
+                            drop(db);
+                        }
+                    }
+                    Err(e) => {
+                        println!("error: {}", e);
+                        client.send(Frame::Error(e.to_string())).await.unwrap();
+                    }
+                    _ => unimplemented!(),
+                }
+            }
+        });
     }
 
-    let replicas: Arc<tokio::sync::Mutex<Vec<Framed<TcpStream, FrameCodec>>>> =
-        Arc::new(tokio::sync::Mutex::new(Vec::new()));
     let listener = TcpListener::bind(address).await.unwrap();
 
     loop {
         match listener.accept().await {
-            Ok((stream, addr)) => {
+            Ok((stream, _)) => {
                 println!("accepted new connection");
 
                 let db = db.clone();
