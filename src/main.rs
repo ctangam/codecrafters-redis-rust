@@ -332,7 +332,8 @@ async fn main() {
         };
     }
 
-    let replicas = Arc::new(Mutex::new(Vec::<String>::new()));
+    let replicas: Arc<tokio::sync::Mutex<Vec<Framed<TcpStream, FrameCodec>>>> =
+        Arc::new(tokio::sync::Mutex::new(Vec::new()));
     let listener = TcpListener::bind(address).await.unwrap();
 
     loop {
@@ -370,13 +371,8 @@ async fn main() {
 
                                 client.send(Frame::Simple("OK".to_string())).await.unwrap();
 
-                                let replicas = {
-                                    let replicas = replicas.lock().unwrap();
-                                    replicas.clone()
-                                };
-                                for replica in replicas.iter() {
-                                    let stream = TcpStream::connect(replica.clone()).await.unwrap();
-                                    let mut client = Framed::new(stream, FrameCodec);
+                                let mut replicas = replicas.lock().await;
+                                for client in replicas.iter_mut() {
                                     client.send(frame.clone()).await.unwrap();
                                 }
                             }
@@ -442,14 +438,7 @@ async fn main() {
                                 }
                             }
                             Ok(Command::Replconf(replconf)) => {
-                                if replconf.port.is_some() {
-                                    let peer_addr =
-                                        format!("{}:{}", addr.ip(), replconf.port.unwrap());
-                                    println!("new replica: {}", peer_addr);
-                                    replicas.lock().unwrap().push(peer_addr);
-                                    client.send(Frame::Simple("OK".to_string())).await.unwrap();
-                                }
-                                if replconf.capa.is_some() {
+                                if replconf.port.is_some() || replconf.capa.is_some() {
                                     client.send(Frame::Simple("OK".to_string())).await.unwrap();
                                 }
                             }
@@ -468,6 +457,7 @@ async fn main() {
                                     .send(Frame::File(Bytes::from(content)))
                                     .await
                                     .unwrap();
+                                break replicas.lock().await.push(client);
                             }
                             Ok(Command::Unknown(_)) => {
                                 continue;
