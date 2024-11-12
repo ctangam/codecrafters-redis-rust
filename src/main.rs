@@ -403,6 +403,7 @@ async fn main() {
                             Ok(Command::Get(get)) => {
                                 let value = {
                                     let db = db.lock().unwrap();
+                                    println!("{db:?}");
                                     let value = db.get(&get.key).cloned();
                                     drop(db);
                                     value
