@@ -3,6 +3,7 @@
 use core::str;
 use std::{
     collections::HashMap,
+    fmt::format,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -319,7 +320,9 @@ async fn main() {
                 Frame::Bulk("PSYNC".to_string().into_bytes().into()),
                 Frame::Bulk("?".to_string().into_bytes().into()),
                 Frame::Bulk("-1".to_string().into_bytes().into()),
-            ])).await.unwrap();
+            ]))
+            .await
+            .unwrap();
 
         let reply = client.next().await.unwrap().unwrap();
         let _replid = if let Frame::Simple(s) = &reply {
@@ -329,15 +332,17 @@ async fn main() {
         };
     }
 
+    let replicas = Arc::new(Mutex::new(Vec::new()));
     let listener = TcpListener::bind(address).await.unwrap();
 
     loop {
         match listener.accept().await {
-            Ok((stream, _)) => {
+            Ok((stream, addr)) => {
                 println!("accepted new connection");
 
                 let db = db.clone();
                 let config = config.clone();
+                let replicas = replicas.clone();
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
                     loop {
@@ -364,6 +369,12 @@ async fn main() {
                                 }
 
                                 client.send(Frame::Simple("OK".to_string())).await.unwrap();
+
+                                for replica in replicas.lock().unwrap().iter() {
+                                    let mut client =
+                                        TcpStream::connect(replica.clone()).await.unwrap();
+                                    client.send(frame).await.unwrap();
+                                }
                             }
                             Ok(Command::Get(get)) => {
                                 let value = {
@@ -428,10 +439,10 @@ async fn main() {
                             }
                             Ok(Command::Replconf(replconf)) => {
                                 if replconf.port.is_some() || replconf.capa.is_some() {
-                                    client
-                                        .send(Frame::Simple("OK".to_string()))
-                                        .await
-                                        .unwrap();
+                                    let peer_addr =
+                                        format!("{}:{}", addr.ip(), replconf.port.unwrap());
+                                    replicas.lock().unwrap().push(peer_addr);
+                                    client.send(Frame::Simple("OK".to_string())).await.unwrap();
                                 }
                             }
                             Ok(Command::Psync(_)) => {

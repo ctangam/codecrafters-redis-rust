@@ -17,10 +17,10 @@ pub mod get;
 pub mod info;
 pub mod keys;
 pub mod ping;
+pub mod psync;
+pub mod replconf;
 pub mod set;
 pub mod unknown;
-pub mod replconf;
-pub mod psync;
 
 pub enum Command {
     Ping(Ping),
