@@ -332,7 +332,7 @@ async fn main() {
         };
     }
 
-    let replicas = Arc::new(Mutex::new(Vec::new()));
+    let replicas = Arc::new(Mutex::new(Vec::<String>::new()));
     let listener = TcpListener::bind(address).await.unwrap();
 
     loop {
@@ -349,7 +349,7 @@ async fn main() {
                         let frame = client.next().await.unwrap().unwrap();
                         println!("frame: {:?}", frame);
 
-                        match Command::from(frame) {
+                        match Command::from(frame.clone()) {
                             Ok(Command::Ping(_)) => client
                                 .send(Frame::Simple("PONG".to_string()))
                                 .await
@@ -370,10 +370,14 @@ async fn main() {
 
                                 client.send(Frame::Simple("OK".to_string())).await.unwrap();
 
-                                for replica in replicas.lock().unwrap().iter() {
-                                    let mut client =
-                                        TcpStream::connect(replica.clone()).await.unwrap();
-                                    client.send(frame).await.unwrap();
+                                let replicas = {
+                                    let replicas = replicas.lock().unwrap();
+                                    replicas.clone()
+                                };
+                                for replica in replicas.iter() {
+                                    let stream = TcpStream::connect(replica.clone()).await.unwrap();
+                                    let mut client = Framed::new(stream, FrameCodec);
+                                    client.send(frame.clone()).await.unwrap();
                                 }
                             }
                             Ok(Command::Get(get)) => {
