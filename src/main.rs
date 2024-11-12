@@ -30,12 +30,7 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
 
-async fn parse_dbfile<T: AsRef<Path>>(dbfile: T, db: DB) {
-    let mut dbfile = File::open(dbfile).await.unwrap();
-    let mut buf = Vec::new();
-    dbfile.read_to_end(&mut buf).await.unwrap();
-    let mut buf = BytesMut::from(&buf[..]);
-
+async fn parse_dbfile(mut buf: BytesMut, db: DB) {
     println!("{:?}", String::from_utf8_lossy(&buf[..]));
     let header = &buf[..9];
     let header = str::from_utf8(header).unwrap();
@@ -266,7 +261,11 @@ async fn main() {
 
             let path = dir.join(dbfilename);
             if path.exists() {
-                parse_dbfile(path, db.clone()).await;
+                let mut dbfile = File::open(path).await.unwrap();
+                let mut buf = Vec::new();
+                dbfile.read_to_end(&mut buf).await.unwrap();
+                let buf = BytesMut::from(&buf[..]);
+                parse_dbfile(buf, db.clone()).await;
             }
         }
     }
@@ -332,6 +331,11 @@ async fn main() {
         } else {
             panic!()
         };
+
+        let rdbfile = client.next().await.unwrap().unwrap();
+        if let Frame::File(content) = rdbfile {
+            parse_dbfile(BytesMut::from(content), db.clone()).await;
+        }
 
         let db = db.clone();
         tokio::spawn(async move {
