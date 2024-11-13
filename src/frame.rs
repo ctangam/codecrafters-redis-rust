@@ -24,7 +24,7 @@ impl Decoder for FrameCodec {
         if src.is_empty() {
             return Ok(None);
         }
-
+        println!("src: {}", str::from_utf8(src.as_ref()).unwrap());
         let frame_type = src[0];
         let frame = match frame_type {
             b'+' => {
