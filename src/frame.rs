@@ -1,6 +1,6 @@
 use core::str;
 
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,6 +12,14 @@ pub enum Frame {
     Null,
     Array(Vec<Frame>),
     File(Bytes),
+}
+
+#[test]
+fn test() {
+    let mut buf = BytesMut::new();
+    buf.put_slice(b"*3\r\n$8\r\nreplconf\r\n$6\r\ngetack\r\n$1\r\n*\r\n");
+    let frame = FrameCodec.decode(&mut buf).unwrap();
+    println!("{:?}", frame);
 }
 
 pub struct FrameCodec;
@@ -85,10 +93,10 @@ impl Decoder for FrameCodec {
                 let mut buffer = vec![0; len];
                 buffer.copy_from_slice(&src[i + 2..i + 2 + len]);
 
-                if src.remaining() < i + 2 + len + 2 {
-                    src.advance(i + 2 + len);
-                } else {
+                if src.remaining() > i + 2 + len && src[i + 2 + len] == b'\r' && src[i + 2 + len + 1] == b'\n' {
                     src.advance(i + 2 + len + 2);
+                } else {
+                    src.advance(i + 2 + len);
                 }
 
                 Frame::Bulk(Bytes::from(buffer))
@@ -122,7 +130,7 @@ impl Decoder for FrameCodec {
                 Frame::Null
             }
 
-            _ => unimplemented!(),
+            _ => return Err(std::io::Error::from(std::io::ErrorKind::InvalidData)),
         };
 
         Ok(Some(frame))
