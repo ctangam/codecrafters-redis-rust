@@ -12,7 +12,7 @@ use std::{
 
 use bytes::{Buf, Bytes, BytesMut};
 use clap::Parser;
-use cmd::{replconf, Command};
+use cmd::{replconf, wait, Command};
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
@@ -504,18 +504,21 @@ async fn main() {
                                     .send(Frame::File(Bytes::from(content)))
                                     .await
                                     .unwrap();
-                                // client
-                                //     .send(Frame::Array(vec![
-                                //         Frame::Bulk("REPLCONF".to_string().into()),
-                                //         Frame::Bulk("GETACK".to_string().into()),
-                                //         Frame::Bulk("*".to_string().into()),
-                                //     ]))
-                                //     .await
-                                //     .unwrap();
+                                client
+                                    .send(Frame::Array(vec![
+                                        Frame::Bulk("REPLCONF".to_string().into()),
+                                        Frame::Bulk("GETACK".to_string().into()),
+                                        Frame::Bulk("*".to_string().into()),
+                                    ]))
+                                    .await
+                                    .unwrap();
                                 break replicas.lock().await.push(client);
                             }
                             Ok(Command::Wait(wait)) => {
                                 let numreplicas = replicas.lock().await.len();
+                                if wait.numreplicas > numreplicas as u8 {
+                                    tokio::time::sleep(Duration::from_millis(wait.timeout)).await;
+                                }
                                 client
                                     .send(Frame::Integer(numreplicas as u64))
                                     .await
