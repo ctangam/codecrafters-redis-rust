@@ -281,18 +281,18 @@ async fn main() {
 
     if let Some((host, port)) = master {
         let address = format!("{}:{}", host, port);
-        let mut client = Framed::new(TcpStream::connect(address).await.unwrap(), FrameCodec);
-        client
+        let mut master = Framed::new(TcpStream::connect(address).await.unwrap(), FrameCodec);
+        master
             .send(Frame::Array(vec![Frame::Bulk(
                 "PING".to_string().into_bytes().into(),
             )]))
             .await
             .unwrap();
 
-        let (_, reply) = client.next().await.unwrap().unwrap();
+        let (_, reply) = master.next().await.unwrap().unwrap();
         assert_eq!(reply, Frame::Simple("PONG".to_string()));
 
-        client
+        master
             .send(Frame::Array(vec![
                 Frame::Bulk("REPLCONF".to_string().into_bytes().into()),
                 Frame::Bulk("listening-port".to_string().into_bytes().into()),
@@ -301,10 +301,10 @@ async fn main() {
             .await
             .unwrap();
 
-        let (_, reply) = client.next().await.unwrap().unwrap();
+        let (_, reply) = master.next().await.unwrap().unwrap();
         assert_eq!(reply, Frame::Simple("OK".to_string()));
 
-        client
+        master
             .send(Frame::Array(vec![
                 Frame::Bulk("REPLCONF".to_string().into_bytes().into()),
                 Frame::Bulk("capa".to_string().into_bytes().into()),
@@ -313,10 +313,10 @@ async fn main() {
             .await
             .unwrap();
 
-        let (_, reply) = client.next().await.unwrap().unwrap();
+        let (_, reply) = master.next().await.unwrap().unwrap();
         assert_eq!(reply, Frame::Simple("OK".to_string()));
 
-        client
+        master
             .send(Frame::Array(vec![
                 Frame::Bulk("PSYNC".to_string().into_bytes().into()),
                 Frame::Bulk("?".to_string().into_bytes().into()),
@@ -325,14 +325,14 @@ async fn main() {
             .await
             .unwrap();
 
-        let (_, reply) = client.next().await.unwrap().unwrap();
+        let (_, reply) = master.next().await.unwrap().unwrap();
         let _replid = if let Frame::Simple(s) = &reply {
             s.split_once(" ").unwrap().1
         } else {
             panic!()
         };
 
-        let (_, rdbfile) = client.next().await.unwrap().unwrap();
+        let (_, rdbfile) = master.next().await.unwrap().unwrap();
         if let Frame::File(content) = rdbfile {
             parse_dbfile(BytesMut::from(content), db.clone()).await;
             println!("replic after parse db: {db:?}");
@@ -342,7 +342,7 @@ async fn main() {
         tokio::spawn(async move {
             let mut offset = 0usize;
             loop {
-                let (n, frame) = client.next().await.unwrap().unwrap();
+                let (n, frame) = master.next().await.unwrap().unwrap();
                 println!("master frame: {:?}", frame);
                 match Command::from(frame) {
                     Ok(Command::Ping(_)) => offset += n,
@@ -359,7 +359,7 @@ async fn main() {
                     }
                     Ok(Command::Replconf(replconf)) => {
                         if let Some(_ack) = replconf.ack {
-                            client
+                            master
                                 .send(Frame::Array(vec![
                                     Frame::Bulk("REPLCONF".to_string().into()),
                                     Frame::Bulk("ACK".to_string().into()),
@@ -372,7 +372,7 @@ async fn main() {
                     }
                     Err(e) => {
                         println!("error: {}", e);
-                        client.send(Frame::Error(e.to_string())).await.unwrap();
+                        master.send(Frame::Error(e.to_string())).await.unwrap();
                     }
                     _ => unimplemented!(),
                 }
@@ -418,11 +418,11 @@ async fn main() {
                                     client.send(Frame::Simple("OK".to_string())).await.unwrap();
 
                                     let mut replicas = replicas.lock().await;
-                                    for client in replicas.iter_mut() {
-                                        client.send(frame.clone()).await.unwrap();
+                                    for replica in replicas.iter_mut() {
+                                        replica.send(frame.clone()).await.unwrap();
                                     }
-                                    for client in replicas.iter_mut() {
-                                        client
+                                    for replica in replicas.iter_mut() {
+                                        replica
                                             .send(Frame::Array(vec![
                                                 Frame::Bulk("REPLCONF".to_string().into()),
                                                 Frame::Bulk("GETACK".to_string().into()),
@@ -431,8 +431,8 @@ async fn main() {
                                             .await
                                             .unwrap();
                                     }
-                                    for client in replicas.iter_mut() {
-                                        let _ = client.next().await;
+                                    for replica in replicas.iter_mut() {
+                                        let _ = replica.next().await;
                                     }
                                 }
                                 Ok(Command::Get(get)) => {
