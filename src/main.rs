@@ -500,19 +500,18 @@ async fn main() {
                                     client.send(Frame::Error(e.to_string())).await.unwrap();
                                 }
 
-                                Ok(Command::Replconf(_replconf)) => {
+                                Ok(Command::Replconf(replconf)) => {
+                                    let port = replconf.port.unwrap();
                                     let mut replica = client;
                                     break tokio::spawn(async move {
                                         replica
                                             .send(Frame::Simple("OK".to_string()))
                                             .await
                                             .unwrap();
-                                        let mut port = 0;
                                         let (_, frame) = replica.next().await.unwrap().unwrap();
-                                        if let Ok(Command::Replconf(replconf)) =
+                                        if let Ok(Command::Replconf(_replconf)) =
                                             Command::from(frame)
                                         {
-                                            port = replconf.port.unwrap();
                                             replica
                                                 .send(Frame::Simple("OK".to_string()))
                                                 .await
