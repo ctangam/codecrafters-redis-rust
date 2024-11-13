@@ -420,6 +420,8 @@ async fn main() {
                                 let mut replicas = replicas.lock().await;
                                 for client in replicas.iter_mut() {
                                     client.send(frame.clone()).await.unwrap();
+                                }
+                                for client in replicas.iter_mut() {
                                     client
                                         .send(Frame::Array(vec![
                                             Frame::Bulk("REPLCONF".to_string().into()),
@@ -428,6 +430,8 @@ async fn main() {
                                         ]))
                                         .await
                                         .unwrap();
+                                }
+                                for client in replicas.iter_mut() {
                                     let _ = client.next().await;
                                 }
                             }
