@@ -490,6 +490,7 @@ async fn main() {
                                     while let Some(n) = resp_rx.recv().await {
                                         acknowledged += n;
                                     }
+                                    println!("num of replicas acknowledged: {acknowledged}");
                                     client.send(Frame::Integer(acknowledged)).await.unwrap();
                                 }
                                 Ok(Command::Unknown(_)) => {
@@ -562,11 +563,9 @@ async fn main() {
                                                         _ = replica.next() => 1,
                                                     };
                                                     println!("replica {port} {acknowledge}");
-                                                    resp_tx
-                                                        .unwrap()
-                                                        .send(acknowledge)
-                                                        .await
-                                                        .unwrap();
+                                                    let resp_tx = resp_tx.unwrap();
+                                                    resp_tx.send(acknowledge).await.unwrap();
+                                                    drop(resp_tx);
                                                 }
                                                 _ => unimplemented!(),
                                             }
