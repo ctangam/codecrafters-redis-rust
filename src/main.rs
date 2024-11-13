@@ -431,9 +431,6 @@ async fn main() {
                                             .await
                                             .unwrap();
                                     }
-                                    for replica in replicas.iter_mut() {
-                                        let _ = replica.next().await;
-                                    }
                                 }
                                 Ok(Command::Get(get)) => {
                                     let value = {
