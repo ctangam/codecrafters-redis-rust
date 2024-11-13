@@ -513,7 +513,8 @@ async fn main() {
                                     .send(Frame::File(Bytes::from(content)))
                                     .await
                                     .unwrap();
-
+                                
+                                println!("new replica: {}", replicas.lock().await.len() + 1);
                                 break replicas.lock().await.push(client);
                             }
                             Ok(Command::Wait(wait)) => {
