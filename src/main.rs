@@ -367,7 +367,7 @@ async fn main() {
                                 ]))
                                 .await
                                 .unwrap();
-                            offset = n;
+                            offset += n;
                         }
                     }
                     Err(e) => {
