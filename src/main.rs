@@ -14,7 +14,7 @@ use bytes::{Buf, Bytes, BytesMut};
 use clap::Parser;
 use cmd::{replconf, wait, Command};
 use frame::{Frame, FrameCodec};
-use futures_util::{select, SinkExt, StreamExt};
+use futures_util::{future::join_all, select, SinkExt, StreamExt};
 use tokio::{
     fs::File,
     io::AsyncReadExt,
@@ -429,10 +429,6 @@ async fn main() {
                                             ]))
                                             .await
                                             .unwrap();
-                                        tokio::select! {
-                                            _ = replica.next() => acknowledged.fetch_add(1, Ordering::SeqCst),
-                                            _ = tokio::time::sleep(Duration::from_millis(500)) => 0,
-                                        };
                                     }
                                 }
                                 Ok(Command::Get(get)) => {
@@ -524,13 +520,24 @@ async fn main() {
                                     break replicas.lock().await.push(client);
                                 }
                                 Ok(Command::Wait(wait)) => {
-                                    let numreplicas = replicas.lock().await.len();
-                                    if wait.numreplicas > numreplicas as u8 {
-                                        tokio::time::sleep(Duration::from_millis(wait.timeout))
-                                            .await;
+                                    let mut acknowledged = 0;
+                                    let mut replicas = replicas.lock().await;
+                                    let mut handlers = Vec::with_capacity(replicas.len());
+                                    while let Some(mut replica) = replicas.pop() {
+                                        handlers.push(tokio::spawn(async move {
+                                            replica.next().await.unwrap().unwrap();
+                                            replica
+                                        }));
                                     }
+                                    tokio::select! {
+                                        _ = tokio::time::sleep(Duration::from_millis(wait.timeout)) => (),
+                                        result = join_all(handlers) => {
+                                            acknowledged = result.into_iter().filter(|result| result.is_ok()).count() as u64;
+                                        }
+                                    }
+                                
                                     client
-                                        .send(Frame::Integer(acknowledged.load(Ordering::SeqCst) as u64))
+                                        .send(Frame::Integer(acknowledged))
                                         .await
                                         .unwrap();
                                 }
