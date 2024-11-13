@@ -1,28 +1,24 @@
 // Uncomment this block to pass the first stage
 
-use core::{num, str};
+use core::str;
 use std::{
     collections::HashMap,
-    fmt::format,
-    path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
-    },
+    path::PathBuf,
+    sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     vec,
 };
 
 use bytes::{Buf, Bytes, BytesMut};
 use clap::Parser;
-use cmd::{replconf, wait, Command};
+use cmd::Command;
 use frame::{Frame, FrameCodec};
-use futures_util::{future::join_all, select, SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt};
 use tokio::{
     fs::File,
     io::AsyncReadExt,
     net::{TcpListener, TcpStream},
-    sync::broadcast,
+    sync::{broadcast, mpsc},
 };
 use tokio_util::codec::Framed;
 
@@ -249,8 +245,6 @@ async fn main() {
     let master_repl_offset = 0;
     let db = Arc::new(Mutex::new(HashMap::new()));
     let config = Arc::new(Mutex::new(HashMap::new()));
-    let replicas: Arc<tokio::sync::Mutex<Vec<Framed<TcpStream, FrameCodec>>>> =
-        Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
     if let Some(dir) = args.dir.as_deref() {
         config
@@ -384,7 +378,7 @@ async fn main() {
         });
     }
 
-    let (tx, rx) = broadcast::channel::<Frame>(32);
+    let (tx, _) = broadcast::channel(32);
     let listener = TcpListener::bind(address).await.unwrap();
     loop {
         match listener.accept().await {
@@ -393,8 +387,7 @@ async fn main() {
 
                 let db = db.clone();
                 let config = config.clone();
-                let replicas = replicas.clone();
-                let mut tx = tx.clone();
+                let tx = tx.clone();
                 let mut rx = tx.subscribe();
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
@@ -423,7 +416,7 @@ async fn main() {
 
                                     client.send(Frame::Simple("OK".to_string())).await.unwrap();
 
-                                    tx.send(frame).unwrap();
+                                    tx.send((frame, None)).unwrap();
                                 }
                                 Ok(Command::Get(get)) => {
                                     let value = {
@@ -489,9 +482,14 @@ async fn main() {
                                         .unwrap();
                                     }
                                 }
-                                Ok(Command::Wait(wait)) => {
-                                    tx.send(frame).unwrap();
+                                Ok(Command::Wait(_wait)) => {
+                                    let (resp_tx, mut resp_rx) = mpsc::channel::<u64>(32);
+                                    tx.send((frame, Some(resp_tx))).unwrap();
 
+                                    let mut acknowledged = 0;
+                                    while let Some(n) = resp_rx.recv().await {
+                                        acknowledged += n;
+                                    }
                                     client.send(Frame::Integer(acknowledged)).await.unwrap();
                                 }
                                 Ok(Command::Unknown(_)) => {
@@ -502,7 +500,7 @@ async fn main() {
                                     client.send(Frame::Error(e.to_string())).await.unwrap();
                                 }
 
-                                Ok(Command::Replconf(replconf)) => {
+                                Ok(Command::Replconf(_replconf)) => {
                                     let mut replica = client;
                                     break tokio::spawn(async move {
                                         replica
@@ -510,7 +508,7 @@ async fn main() {
                                             .await
                                             .unwrap();
                                         let (_, frame) = replica.next().await.unwrap().unwrap();
-                                        if let Ok(Command::Replconf(replconf)) =
+                                        if let Ok(Command::Replconf(_replconf)) =
                                             Command::from(frame)
                                         {
                                             replica
@@ -543,9 +541,9 @@ async fn main() {
                                         //handshake done
 
                                         loop {
-                                            let frame = rx.recv().await.unwrap();
+                                            let (frame, resp_tx) = rx.recv().await.unwrap();
                                             match Command::from(frame.clone()) {
-                                                Ok(Command::Set(set)) => {
+                                                Ok(Command::Set(_set)) => {
                                                     replica.send(frame).await.unwrap();
                                                     replica
                                                         .send(Frame::Array(vec![
@@ -565,6 +563,11 @@ async fn main() {
                                                         _ = tokio::time::sleep(Duration::from_millis(wait.timeout)) => 0,
                                                         _ = replica.next() => 1,
                                                     };
+                                                    resp_tx
+                                                        .unwrap()
+                                                        .send(acknowledge)
+                                                        .await
+                                                        .unwrap();
                                                 }
                                                 _ => unimplemented!(),
                                             }
