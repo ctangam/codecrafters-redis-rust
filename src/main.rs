@@ -556,6 +556,7 @@ async fn main() {
                                                         ]))
                                                         .await
                                                         .unwrap();
+                                                    drop(resp_tx.unwrap());
                                                 }
                                                 Ok(Command::Wait(wait)) => {
                                                     let acknowledge: u64 = tokio::select! {
