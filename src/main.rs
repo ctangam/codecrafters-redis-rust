@@ -289,7 +289,7 @@ async fn main() {
             .await
             .unwrap();
 
-        let reply = client.next().await.unwrap().unwrap();
+        let (_, reply) = client.next().await.unwrap().unwrap();
         assert_eq!(reply, Frame::Simple("PONG".to_string()));
 
         client
@@ -301,7 +301,7 @@ async fn main() {
             .await
             .unwrap();
 
-        let reply = client.next().await.unwrap().unwrap();
+        let (_, reply) = client.next().await.unwrap().unwrap();
         assert_eq!(reply, Frame::Simple("OK".to_string()));
 
         client
@@ -313,7 +313,7 @@ async fn main() {
             .await
             .unwrap();
 
-        let reply = client.next().await.unwrap().unwrap();
+        let (_, reply) = client.next().await.unwrap().unwrap();
         assert_eq!(reply, Frame::Simple("OK".to_string()));
 
         client
@@ -325,14 +325,14 @@ async fn main() {
             .await
             .unwrap();
 
-        let reply = client.next().await.unwrap().unwrap();
+        let (_, reply) = client.next().await.unwrap().unwrap();
         let _replid = if let Frame::Simple(s) = &reply {
             s.split_once(" ").unwrap().1
         } else {
             panic!()
         };
         
-        let rdbfile = client.next().await.unwrap().unwrap();
+        let (_, rdbfile) = client.next().await.unwrap().unwrap();
         if let Frame::File(content) = rdbfile {
             parse_dbfile(BytesMut::from(content), db.clone()).await;
             println!("replic after parse db: {db:?}");
@@ -340,10 +340,12 @@ async fn main() {
 
         let db = db.clone();
         tokio::spawn(async move {
+            let mut offset = 0usize;
             loop {
-                let frame = client.next().await.unwrap().unwrap();
+                let (n, frame) = client.next().await.unwrap().unwrap();
                 println!("master frame: {:?}", frame);
                 match Command::from(frame) {
+                    Ok(Command::Ping(_)) => offset += n,
                     Ok(Command::Set(set)) => {
                         let expires = set
                             .expire
@@ -353,6 +355,7 @@ async fn main() {
                             db.insert(set.key, (set.value, expires));
                             drop(db);
                         }
+                        offset += n;
                     }
                     Ok(Command::Replconf(replconf)) => {
                         if let Some(_ack) = replconf.ack {
@@ -360,10 +363,11 @@ async fn main() {
                                 .send(Frame::Array(vec![
                                     Frame::Bulk("REPLCONF".to_string().into()),
                                     Frame::Bulk("ACK".to_string().into()),
-                                    Frame::Bulk("0".to_string().into()),
+                                    Frame::Bulk(offset.to_string().into()),
                                 ]))
                                 .await
                                 .unwrap();
+                            offset = n;
                         }
                     }
                     Err(e) => {
@@ -389,7 +393,7 @@ async fn main() {
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
                     loop {
-                        let frame = client.next().await.unwrap().unwrap();
+                        let (_, frame) = client.next().await.unwrap().unwrap();
                         println!("client frame: {:?}", frame);
 
                         match Command::from(frame.clone()) {

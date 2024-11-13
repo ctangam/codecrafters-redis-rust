@@ -25,7 +25,7 @@ fn test() {
 pub struct FrameCodec;
 
 impl Decoder for FrameCodec {
-    type Item = Frame;
+    type Item = (usize, Frame);
     type Error = std::io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -46,7 +46,7 @@ impl Decoder for FrameCodec {
                 }
 
                 src.advance(i + 2);
-                Frame::Simple(String::from_utf8(buffer).unwrap())
+                (i + 2, Frame::Simple(String::from_utf8(buffer).unwrap()))
             }
             b'-' => {
                 let mut buffer = Vec::new();
@@ -60,7 +60,7 @@ impl Decoder for FrameCodec {
                 }
 
                 src.advance(i + 2);
-                Frame::Error(String::from_utf8(buffer).unwrap())
+                (i + 2, Frame::Error(String::from_utf8(buffer).unwrap()))
             }
             b':' => {
                 let mut buffer = Vec::new();
@@ -74,7 +74,7 @@ impl Decoder for FrameCodec {
                 }
 
                 src.advance(i + 2);
-                Frame::Integer(u64::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap())
+                (i + 2, Frame::Integer(u64::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap()))
             }
             b'$' => {
                 let mut buffer = Vec::new();
@@ -94,11 +94,12 @@ impl Decoder for FrameCodec {
 
                 if src.remaining() > i + 2 + len && src[i + 2 + len] == b'\r' && src[i + 2 + len + 1] == b'\n' {
                     src.advance(i + 2 + len + 2);
+                    (i + 2 + len + 2, Frame::Bulk(Bytes::from(buffer)))
                 } else {
                     src.advance(i + 2 + len);
+                    (i + 2 + len, Frame::Bulk(Bytes::from(buffer)))
                 }
 
-                Frame::Bulk(Bytes::from(buffer))
             }
             b'*' => {
                 let mut buffer = Vec::new();
@@ -114,19 +115,21 @@ impl Decoder for FrameCodec {
                 let count = usize::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap();
                 src.advance(i + 2);
 
+                let mut offset = i + 2;
                 let mut frames = Vec::with_capacity(count);
                 for _ in 0..count {
                     let frame = self.decode(src)?;
-                    if let Some(frame) = frame {
+                    if let Some((n, frame)) = frame {
                         frames.push(frame);
+                        offset += n;
                     }
                 }
 
-                Frame::Array(frames)
+                (offset, Frame::Array(frames))
             }
             b'_' => {
                 src.advance(3);
-                Frame::Null
+                (3, Frame::Null)
             }
 
             _ => return Err(std::io::Error::from(std::io::ErrorKind::InvalidData)),
