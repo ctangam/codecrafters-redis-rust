@@ -428,7 +428,7 @@ async fn main() {
                                         ]))
                                         .await
                                         .unwrap();
-                                    let _ = client.next().await.unwrap().unwrap();
+                                    let _ = client.next().await;
                                 }
                             }
                             Ok(Command::Get(get)) => {
