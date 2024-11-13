@@ -420,6 +420,15 @@ async fn main() {
                                 let mut replicas = replicas.lock().await;
                                 for client in replicas.iter_mut() {
                                     client.send(frame.clone()).await.unwrap();
+                                    client
+                                        .send(Frame::Array(vec![
+                                            Frame::Bulk("REPLCONF".to_string().into()),
+                                            Frame::Bulk("GETACK".to_string().into()),
+                                            Frame::Bulk("*".to_string().into()),
+                                        ]))
+                                        .await
+                                        .unwrap();
+                                    let _ = client.next().await.unwrap().unwrap();
                                 }
                             }
                             Ok(Command::Get(get)) => {
@@ -504,14 +513,7 @@ async fn main() {
                                     .send(Frame::File(Bytes::from(content)))
                                     .await
                                     .unwrap();
-                                // client
-                                //     .send(Frame::Array(vec![
-                                //         Frame::Bulk("REPLCONF".to_string().into()),
-                                //         Frame::Bulk("GETACK".to_string().into()),
-                                //         Frame::Bulk("*".to_string().into()),
-                                //     ]))
-                                //     .await
-                                //     .unwrap();
+
                                 break replicas.lock().await.push(client);
                             }
                             Ok(Command::Wait(wait)) => {
