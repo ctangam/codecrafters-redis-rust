@@ -5,7 +5,7 @@ use std::{
     collections::HashMap,
     fmt::format,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     vec,
 };
@@ -14,7 +14,7 @@ use bytes::{Buf, Bytes, BytesMut};
 use clap::Parser;
 use cmd::{replconf, wait, Command};
 use frame::{Frame, FrameCodec};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{select, SinkExt, StreamExt};
 use tokio::{
     fs::File,
     io::AsyncReadExt,
@@ -381,7 +381,7 @@ async fn main() {
     }
 
     let listener = TcpListener::bind(address).await.unwrap();
-
+    let acknowledged = Arc::new(AtomicUsize::new(0));
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
@@ -390,6 +390,7 @@ async fn main() {
                 let db = db.clone();
                 let config = config.clone();
                 let replicas = replicas.clone();
+                let acknowledged = acknowledged.clone();
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
                     loop {
@@ -420,8 +421,6 @@ async fn main() {
                                     let mut replicas = replicas.lock().await;
                                     for replica in replicas.iter_mut() {
                                         replica.send(frame.clone()).await.unwrap();
-                                    }
-                                    for replica in replicas.iter_mut() {
                                         replica
                                             .send(Frame::Array(vec![
                                                 Frame::Bulk("REPLCONF".to_string().into()),
@@ -430,6 +429,10 @@ async fn main() {
                                             ]))
                                             .await
                                             .unwrap();
+                                        tokio::select! {
+                                            _ = replica.next() => acknowledged.fetch_add(1, Ordering::SeqCst),
+                                            _ = tokio::time::sleep(Duration::from_millis(500)) => 0,
+                                        };
                                     }
                                 }
                                 Ok(Command::Get(get)) => {
@@ -527,7 +530,7 @@ async fn main() {
                                             .await;
                                     }
                                     client
-                                        .send(Frame::Integer(numreplicas as u64))
+                                        .send(Frame::Integer(acknowledged.load(Ordering::SeqCst) as u64))
                                         .await
                                         .unwrap();
                                 }
