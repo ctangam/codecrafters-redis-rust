@@ -507,10 +507,12 @@ async fn main() {
                                             .send(Frame::Simple("OK".to_string()))
                                             .await
                                             .unwrap();
+                                        let mut port = 0;
                                         let (_, frame) = replica.next().await.unwrap().unwrap();
-                                        if let Ok(Command::Replconf(_replconf)) =
+                                        if let Ok(Command::Replconf(replconf)) =
                                             Command::from(frame)
                                         {
+                                            port = replconf.port.unwrap();
                                             replica
                                                 .send(Frame::Simple("OK".to_string()))
                                                 .await
@@ -538,6 +540,7 @@ async fn main() {
 
                                         loop {
                                             let (frame, resp_tx) = rx.recv().await.unwrap();
+                                            println!("replica {port} frame: {frame:?}");
                                             match Command::from(frame.clone()) {
                                                 Ok(Command::Set(_set)) => {
                                                     replica.send(frame).await.unwrap();
@@ -559,6 +562,7 @@ async fn main() {
                                                         _ = tokio::time::sleep(Duration::from_millis(wait.timeout)) => 0,
                                                         _ = replica.next() => 1,
                                                     };
+                                                    println!("replica {port} {acknowledge}");
                                                     resp_tx
                                                         .unwrap()
                                                         .send(acknowledge)
