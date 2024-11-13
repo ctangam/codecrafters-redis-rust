@@ -521,12 +521,15 @@ async fn main() {
                                     let mut acknowledged = 0;
                                     let mut replicas = replicas.lock().await;
                                     let mut handlers = Vec::with_capacity(replicas.len());
+                                    let new_replicas = Arc::new(Mutex::new(Vec::new()));
                                     while let Some(mut replica) = replicas.pop() {
+                                        let new_replicas = new_replicas.clone();
                                         handlers.push(tokio::spawn(async move {
                                             replica.next().await.unwrap().unwrap();
-                                            replica
+                                            new_replicas.lock().unwrap().push(replica);
                                         }));
                                     }
+                                    replicas.append(new_replicas.lock().unwrap().as_mut());
                                     tokio::select! {
                                         _ = tokio::time::sleep(Duration::from_millis(wait.timeout)) => (),
                                         result = join_all(handlers) => {
