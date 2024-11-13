@@ -381,7 +381,6 @@ async fn main() {
     }
 
     let listener = TcpListener::bind(address).await.unwrap();
-    let acknowledged = Arc::new(AtomicUsize::new(0));
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
@@ -390,7 +389,6 @@ async fn main() {
                 let db = db.clone();
                 let config = config.clone();
                 let replicas = replicas.clone();
-                let acknowledged = acknowledged.clone();
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
                     loop {
