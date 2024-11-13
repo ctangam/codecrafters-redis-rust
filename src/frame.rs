@@ -90,7 +90,7 @@ impl Decoder for FrameCodec {
                 } else {
                     src.advance(i + 2 + len + 2);
                 }
-                
+
                 Frame::Bulk(Bytes::from(buffer))
             }
             b'*' => {

@@ -352,6 +352,18 @@ async fn main() {
                             drop(db);
                         }
                     }
+                    Ok(Command::Replconf(replconf)) => {
+                        if let Some(ack) = replconf.ack {
+                            client
+                                .send(Frame::Array(vec![
+                                    Frame::Bulk("REPLCONF".to_string().into()),
+                                    Frame::Bulk("ACK".to_string().into()),
+                                    Frame::Bulk("0".to_string().into()),
+                                ]))
+                                .await
+                                .unwrap();
+                        }
+                    }
                     Err(e) => {
                         println!("error: {}", e);
                         client.send(Frame::Error(e.to_string())).await.unwrap();
@@ -436,8 +448,8 @@ async fn main() {
                                 };
                                 if value.is_some() {
                                     let frame = Frame::Array(vec![
-                                        Frame::Bulk(key.into_bytes().into()),
-                                        Frame::Bulk(value.unwrap().into_bytes().into()),
+                                        Frame::Bulk(key.into()),
+                                        Frame::Bulk(value.unwrap().into()),
                                     ]);
                                     client.send(frame).await.unwrap();
                                 } else {
@@ -451,7 +463,7 @@ async fn main() {
                                     db.keys()
                                         .into_iter()
                                         .filter(|key| key.starts_with(left) && key.ends_with(right))
-                                        .map(|key| Frame::Bulk(key.clone().into_bytes().into()))
+                                        .map(|key| Frame::Bulk(key.clone().into()))
                                         .collect::<Vec<_>>()
                                 };
                                 client.send(Frame::Array(keys)).await.unwrap();
@@ -484,6 +496,14 @@ async fn main() {
                                 let content = hex::decode(content).unwrap();
                                 client
                                     .send(Frame::File(Bytes::from(content)))
+                                    .await
+                                    .unwrap();
+                                client
+                                    .send(Frame::Array(vec![
+                                        Frame::Bulk("REPLCONF".to_string().into()),
+                                        Frame::Bulk("GETACK".to_string().into()),
+                                        Frame::Bulk("*".to_string().into()),
+                                    ]))
                                     .await
                                     .unwrap();
                                 break replicas.lock().await.push(client);
