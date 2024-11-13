@@ -163,7 +163,7 @@ impl Encoder<Frame> for FrameCodec {
             }
             Frame::Integer(num) => {
                 dst.extend_from_slice(b":");
-                dst.extend_from_slice(&num.to_be_bytes());
+                dst.extend_from_slice(num.to_string().as_bytes());
                 dst.extend_from_slice(b"\r\n");
             }
             Frame::Bulk(msg) => {
