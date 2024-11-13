@@ -520,6 +520,7 @@ async fn main() {
                                 Ok(Command::Wait(wait)) => {
                                     let mut acknowledged = 0;
                                     let mut replicas = replicas.lock().await;
+                                    println!("before replicas: {}", replicas.len());
                                     let mut handlers = Vec::with_capacity(replicas.len());
                                     let new_replicas = Arc::new(Mutex::new(Vec::new()));
                                     while let Some(mut replica) = replicas.pop() {
@@ -530,6 +531,7 @@ async fn main() {
                                         }));
                                     }
                                     replicas.append(new_replicas.lock().unwrap().as_mut());
+                                    println!("after replicas: {}", replicas.len());
                                     tokio::select! {
                                         _ = tokio::time::sleep(Duration::from_millis(wait.timeout)) => (),
                                         result = join_all(handlers) => {
