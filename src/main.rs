@@ -519,10 +519,6 @@ async fn main() {
                                         let (_, frame) = replica.next().await.unwrap().unwrap();
                                         if let Ok(Command::Psync(_)) = Command::from(frame) {
                                             replica
-                                                .send(Frame::Simple("OK".to_string()))
-                                                .await
-                                                .unwrap();
-                                            replica
                                                 .send(Frame::Simple(format!(
                                                     "FULLRESYNC {repl_id} {repl_offset}",
                                                     repl_id =
