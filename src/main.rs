@@ -488,6 +488,7 @@ async fn main() {
 
                                     let mut acknowledged = 0;
                                     while let Some(n) = resp_rx.recv().await {
+                                        println!("{n} received");
                                         acknowledged += n;
                                     }
                                     println!("num of replicas acknowledged: {acknowledged}");
@@ -556,7 +557,6 @@ async fn main() {
                                                         ]))
                                                         .await
                                                         .unwrap();
-                                                    drop(resp_tx.unwrap());
                                                 }
                                                 Ok(Command::Wait(wait)) => {
                                                     let acknowledge: u64 = tokio::select! {
