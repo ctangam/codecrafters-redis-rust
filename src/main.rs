@@ -484,8 +484,9 @@ async fn main() {
                                 }
                                 Ok(Command::Wait(_wait)) => {
                                     let (resp_tx, mut resp_rx) = mpsc::channel::<u64>(32);
-                                    tx.send((frame, Some(resp_tx.clone()))).unwrap();
-                                    drop(resp_tx);
+                                    tx.send((frame, Some(resp_tx))).unwrap();
+                                    
+                                    println!("receiver: {}", tx.receiver_count());
                                     let mut acknowledged = 0;
                                     while let Some(n) = resp_rx.recv().await {
                                         acknowledged += n;
