@@ -393,150 +393,154 @@ async fn main() {
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
                     loop {
-                        let (_, frame) = client.next().await.unwrap().unwrap();
-                        println!("client frame: {:?}", frame);
+                        if let Some(Ok((_, frame))) = client.next().await {
+                            println!("client frame: {:?}", frame);
 
-                        match Command::from(frame.clone()) {
-                            Ok(Command::Ping(_)) => client
-                                .send(Frame::Simple("PONG".to_string()))
-                                .await
-                                .unwrap(),
-                            Ok(Command::Echo(echo)) => client
-                                .send(Frame::Bulk(echo.message.into_bytes().into()))
-                                .await
-                                .unwrap(),
-                            Ok(Command::Set(set)) => {
-                                let expires = set
-                                    .expire
-                                    .and_then(|expire| Instant::now().checked_add(expire));
-                                {
-                                    let mut db = db.lock().unwrap();
-                                    db.insert(set.key, (set.value, expires));
-                                    drop(db);
-                                }
-
-                                client.send(Frame::Simple("OK".to_string())).await.unwrap();
-
-                                let mut replicas = replicas.lock().await;
-                                for client in replicas.iter_mut() {
-                                    client.send(frame.clone()).await.unwrap();
-                                }
-                                for client in replicas.iter_mut() {
-                                    client
-                                        .send(Frame::Array(vec![
-                                            Frame::Bulk("REPLCONF".to_string().into()),
-                                            Frame::Bulk("GETACK".to_string().into()),
-                                            Frame::Bulk("*".to_string().into()),
-                                        ]))
-                                        .await
-                                        .unwrap();
-                                }
-                                for client in replicas.iter_mut() {
-                                    let _ = client.next().await;
-                                }
-                            }
-                            Ok(Command::Get(get)) => {
-                                let value = {
-                                    let db = db.lock().unwrap();
-                                    println!("{db:?}");
-                                    let value = db.get(&get.key).cloned();
-                                    drop(db);
-                                    value
-                                };
-                                if let Some((value, expires)) = value {
-                                    if let Some(expires) = expires {
-                                        let now = Instant::now();
-                                        if now > expires {
-                                            client.send(Frame::Null).await.unwrap();
-                                            continue;
-                                        }
+                            match Command::from(frame.clone()) {
+                                Ok(Command::Ping(_)) => client
+                                    .send(Frame::Simple("PONG".to_string()))
+                                    .await
+                                    .unwrap(),
+                                Ok(Command::Echo(echo)) => client
+                                    .send(Frame::Bulk(echo.message.into_bytes().into()))
+                                    .await
+                                    .unwrap(),
+                                Ok(Command::Set(set)) => {
+                                    let expires = set
+                                        .expire
+                                        .and_then(|expire| Instant::now().checked_add(expire));
+                                    {
+                                        let mut db = db.lock().unwrap();
+                                        db.insert(set.key, (set.value, expires));
+                                        drop(db);
                                     }
-                                    client
-                                        .send(Frame::Bulk(value.clone().into()))
-                                        .await
-                                        .unwrap();
-                                } else {
-                                    client.send(Frame::Null).await.unwrap();
+
+                                    client.send(Frame::Simple("OK".to_string())).await.unwrap();
+
+                                    let mut replicas = replicas.lock().await;
+                                    for client in replicas.iter_mut() {
+                                        client.send(frame.clone()).await.unwrap();
+                                    }
+                                    for client in replicas.iter_mut() {
+                                        client
+                                            .send(Frame::Array(vec![
+                                                Frame::Bulk("REPLCONF".to_string().into()),
+                                                Frame::Bulk("GETACK".to_string().into()),
+                                                Frame::Bulk("*".to_string().into()),
+                                            ]))
+                                            .await
+                                            .unwrap();
+                                    }
+                                    for client in replicas.iter_mut() {
+                                        let _ = client.next().await;
+                                    }
                                 }
-                            }
-                            Ok(Command::ConfigGet(cmd)) => {
-                                let key = cmd.key;
-                                let value = {
-                                    let config = config.lock().unwrap();
-                                    config.get(&key).cloned()
-                                };
-                                if value.is_some() {
-                                    let frame = Frame::Array(vec![
-                                        Frame::Bulk(key.into()),
-                                        Frame::Bulk(value.unwrap().into()),
-                                    ]);
-                                    client.send(frame).await.unwrap();
-                                } else {
-                                    client.send(Frame::Null).await.unwrap();
+                                Ok(Command::Get(get)) => {
+                                    let value = {
+                                        let db = db.lock().unwrap();
+                                        println!("{db:?}");
+                                        let value = db.get(&get.key).cloned();
+                                        drop(db);
+                                        value
+                                    };
+                                    if let Some((value, expires)) = value {
+                                        if let Some(expires) = expires {
+                                            let now = Instant::now();
+                                            if now > expires {
+                                                client.send(Frame::Null).await.unwrap();
+                                                continue;
+                                            }
+                                        }
+                                        client
+                                            .send(Frame::Bulk(value.clone().into()))
+                                            .await
+                                            .unwrap();
+                                    } else {
+                                        client.send(Frame::Null).await.unwrap();
+                                    }
                                 }
-                            }
-                            Ok(Command::Keys(keys)) => {
-                                let (left, right) = keys.pattern.split_once("*").unwrap();
-                                let keys = {
-                                    let db = db.lock().unwrap();
-                                    db.keys()
-                                        .into_iter()
-                                        .filter(|key| key.starts_with(left) && key.ends_with(right))
-                                        .map(|key| Frame::Bulk(key.clone().into()))
-                                        .collect::<Vec<_>>()
-                                };
-                                client.send(Frame::Array(keys)).await.unwrap();
-                            }
-                            Ok(Command::Info(info)) => {
-                                if info.replication {
-                                    client
+                                Ok(Command::ConfigGet(cmd)) => {
+                                    let key = cmd.key;
+                                    let value = {
+                                        let config = config.lock().unwrap();
+                                        config.get(&key).cloned()
+                                    };
+                                    if value.is_some() {
+                                        let frame = Frame::Array(vec![
+                                            Frame::Bulk(key.into()),
+                                            Frame::Bulk(value.unwrap().into()),
+                                        ]);
+                                        client.send(frame).await.unwrap();
+                                    } else {
+                                        client.send(Frame::Null).await.unwrap();
+                                    }
+                                }
+                                Ok(Command::Keys(keys)) => {
+                                    let (left, right) = keys.pattern.split_once("*").unwrap();
+                                    let keys = {
+                                        let db = db.lock().unwrap();
+                                        db.keys()
+                                            .into_iter()
+                                            .filter(|key| {
+                                                key.starts_with(left) && key.ends_with(right)
+                                            })
+                                            .map(|key| Frame::Bulk(key.clone().into()))
+                                            .collect::<Vec<_>>()
+                                    };
+                                    client.send(Frame::Array(keys)).await.unwrap();
+                                }
+                                Ok(Command::Info(info)) => {
+                                    if info.replication {
+                                        client
                                         .send(Frame::Bulk(
                                             format!("role:{role}\r\nmaster_repl_offset:{master_repl_offset}\r\nmaster_replid:{master_replid}").into_bytes().into(),
                                         ))
                                         .await
                                         .unwrap();
+                                    }
                                 }
-                            }
-                            Ok(Command::Replconf(replconf)) => {
-                                if replconf.port.is_some() || replconf.capa.is_some() {
-                                    client.send(Frame::Simple("OK".to_string())).await.unwrap();
+                                Ok(Command::Replconf(replconf)) => {
+                                    if replconf.port.is_some() || replconf.capa.is_some() {
+                                        client.send(Frame::Simple("OK".to_string())).await.unwrap();
+                                    }
                                 }
-                            }
-                            Ok(Command::Psync(_)) => {
-                                client
-                                    .send(Frame::Simple(format!(
-                                        "FULLRESYNC {repl_id} {repl_offset}",
-                                        repl_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
-                                        repl_offset = "0",
-                                    )))
-                                    .await
-                                    .unwrap();
-                                let content = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
-                                let content = hex::decode(content).unwrap();
-                                client
-                                    .send(Frame::File(Bytes::from(content)))
-                                    .await
-                                    .unwrap();
-                                
-                                println!("new replica: {}", replicas.lock().await.len() + 1);
-                                break replicas.lock().await.push(client);
-                            }
-                            Ok(Command::Wait(wait)) => {
-                                let numreplicas = replicas.lock().await.len();
-                                if wait.numreplicas > numreplicas as u8 {
-                                    tokio::time::sleep(Duration::from_millis(wait.timeout)).await;
+                                Ok(Command::Psync(_)) => {
+                                    client
+                                        .send(Frame::Simple(format!(
+                                            "FULLRESYNC {repl_id} {repl_offset}",
+                                            repl_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
+                                            repl_offset = "0",
+                                        )))
+                                        .await
+                                        .unwrap();
+                                    let content = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
+                                    let content = hex::decode(content).unwrap();
+                                    client
+                                        .send(Frame::File(Bytes::from(content)))
+                                        .await
+                                        .unwrap();
+
+                                    println!("new replica: {}", replicas.lock().await.len() + 1);
+                                    break replicas.lock().await.push(client);
                                 }
-                                client
-                                    .send(Frame::Integer(numreplicas as u64))
-                                    .await
-                                    .unwrap();
-                            }
-                            Ok(Command::Unknown(_)) => {
-                                continue;
-                            }
-                            Err(e) => {
-                                println!("error: {}", e);
-                                client.send(Frame::Error(e.to_string())).await.unwrap();
+                                Ok(Command::Wait(wait)) => {
+                                    let numreplicas = replicas.lock().await.len();
+                                    if wait.numreplicas > numreplicas as u8 {
+                                        tokio::time::sleep(Duration::from_millis(wait.timeout))
+                                            .await;
+                                    }
+                                    client
+                                        .send(Frame::Integer(numreplicas as u64))
+                                        .await
+                                        .unwrap();
+                                }
+                                Ok(Command::Unknown(_)) => {
+                                    continue;
+                                }
+                                Err(e) => {
+                                    println!("error: {}", e);
+                                    client.send(Frame::Error(e.to_string())).await.unwrap();
+                                }
                             }
                         }
                     }
