@@ -74,7 +74,12 @@ impl Decoder for FrameCodec {
                 }
 
                 src.advance(i + 2);
-                (i + 2, Frame::Integer(u64::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap()))
+                (
+                    i + 2,
+                    Frame::Integer(
+                        u64::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap(),
+                    ),
+                )
             }
             b'$' => {
                 let mut buffer = Vec::new();
@@ -92,14 +97,16 @@ impl Decoder for FrameCodec {
                 let mut buffer = vec![0; len];
                 buffer.copy_from_slice(&src[i + 2..i + 2 + len]);
 
-                if src.remaining() > i + 2 + len && src[i + 2 + len] == b'\r' && src[i + 2 + len + 1] == b'\n' {
+                if src.remaining() > i + 2 + len
+                    && src[i + 2 + len] == b'\r'
+                    && src[i + 2 + len + 1] == b'\n'
+                {
                     src.advance(i + 2 + len + 2);
                     (i + 2 + len + 2, Frame::Bulk(Bytes::from(buffer)))
                 } else {
                     src.advance(i + 2 + len);
                     (i + 2 + len, Frame::Bulk(Bytes::from(buffer)))
                 }
-
             }
             b'*' => {
                 let mut buffer = Vec::new();

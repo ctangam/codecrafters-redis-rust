@@ -1,6 +1,6 @@
 // Uncomment this block to pass the first stage
 
-use core::str;
+use core::{num, str};
 use std::{
     collections::HashMap,
     fmt::format,
@@ -331,7 +331,7 @@ async fn main() {
         } else {
             panic!()
         };
-        
+
         let (_, rdbfile) = client.next().await.unwrap().unwrap();
         if let Frame::File(content) = rdbfile {
             parse_dbfile(BytesMut::from(content), db.clone()).await;
@@ -513,6 +513,13 @@ async fn main() {
                                 //     .await
                                 //     .unwrap();
                                 break replicas.lock().await.push(client);
+                            }
+                            Ok(Command::Wait(wait)) => {
+                                let numreplicas = replicas.lock().await.len();
+                                client
+                                    .send(Frame::Integer(numreplicas as u64))
+                                    .await
+                                    .unwrap();
                             }
                             Ok(Command::Unknown(_)) => {
                                 continue;

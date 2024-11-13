@@ -8,6 +8,7 @@ use psync::Psync;
 use replconf::Replconf;
 use set::Set;
 use unknown::Unknown;
+use wait::Wait;
 
 use crate::{frame::Frame, parse::Parse};
 
@@ -21,6 +22,7 @@ pub mod psync;
 pub mod replconf;
 pub mod set;
 pub mod unknown;
+pub mod wait;
 
 pub enum Command {
     Ping(Ping),
@@ -33,6 +35,7 @@ pub enum Command {
     Info(Info),
     Replconf(Replconf),
     Psync(Psync),
+    Wait(Wait),
 }
 
 impl Command {
@@ -54,6 +57,7 @@ impl Command {
             "info" => Command::Info(Info::parse_frames(&mut parse)?),
             "replconf" => Command::Replconf(Replconf::parse_frames(&mut parse)?),
             "psync" => Command::Psync(Psync::parse_frames(&mut parse)?),
+            "wait" => Command::Wait(Wait::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.
