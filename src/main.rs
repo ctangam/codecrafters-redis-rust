@@ -335,12 +335,14 @@ async fn main() {
         let rdbfile = client.next().await.unwrap().unwrap();
         if let Frame::File(content) = rdbfile {
             parse_dbfile(BytesMut::from(content), db.clone()).await;
+            println!("replic after parse db: {db:?}");
         }
 
         let db = db.clone();
         tokio::spawn(async move {
             loop {
                 let frame = client.next().await.unwrap().unwrap();
+                println!("master frame: {:?}", frame);
                 match Command::from(frame) {
                     Ok(Command::Set(set)) => {
                         let expires = set
@@ -353,7 +355,7 @@ async fn main() {
                         }
                     }
                     Ok(Command::Replconf(replconf)) => {
-                        if let Some(ack) = replconf.ack {
+                        if let Some(_ack) = replconf.ack {
                             client
                                 .send(Frame::Array(vec![
                                     Frame::Bulk("REPLCONF".to_string().into()),
@@ -388,7 +390,7 @@ async fn main() {
                     let mut client = Framed::new(stream, FrameCodec);
                     loop {
                         let frame = client.next().await.unwrap().unwrap();
-                        println!("frame: {:?}", frame);
+                        println!("client frame: {:?}", frame);
 
                         match Command::from(frame.clone()) {
                             Ok(Command::Ping(_)) => client
