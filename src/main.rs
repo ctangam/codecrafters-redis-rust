@@ -388,7 +388,7 @@ async fn main() {
                 let db = db.clone();
                 let config = config.clone();
                 let tx = tx.clone();
-                let mut rx = tx.subscribe();
+                
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
                     loop {
@@ -538,7 +538,8 @@ async fn main() {
                                                 .unwrap();
                                         }
                                         //handshake done
-
+                                        
+                                        let mut rx = tx.subscribe();
                                         loop {
                                             let (frame, resp_tx) = rx.recv().await.unwrap();
                                             println!("replica {port} frame: {frame:?}");
