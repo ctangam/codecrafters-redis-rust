@@ -33,7 +33,6 @@ impl Decoder for FrameCodec {
             return Ok(None);
         }
         let frame_type = src[0];
-        println!("frame_type: {}", frame_type);
         let frame = match frame_type {
             b'+' => {
                 let mut buffer = Vec::new();

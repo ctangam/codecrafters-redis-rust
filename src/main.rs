@@ -500,14 +500,14 @@ async fn main() {
                                     .send(Frame::File(Bytes::from(content)))
                                     .await
                                     .unwrap();
-                                client
-                                    .send(Frame::Array(vec![
-                                        Frame::Bulk("REPLCONF".to_string().into()),
-                                        Frame::Bulk("GETACK".to_string().into()),
-                                        Frame::Bulk("*".to_string().into()),
-                                    ]))
-                                    .await
-                                    .unwrap();
+                                // client
+                                //     .send(Frame::Array(vec![
+                                //         Frame::Bulk("REPLCONF".to_string().into()),
+                                //         Frame::Bulk("GETACK".to_string().into()),
+                                //         Frame::Bulk("*".to_string().into()),
+                                //     ]))
+                                //     .await
+                                //     .unwrap();
                                 break replicas.lock().await.push(client);
                             }
                             Ok(Command::Unknown(_)) => {
