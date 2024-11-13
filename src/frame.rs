@@ -193,7 +193,6 @@ impl Encoder<Frame> for FrameCodec {
                 dst.extend_from_slice(b"\r\n");
                 dst.extend_from_slice(&content[..]);
             }
-            _ => unimplemented!(),
         }
         Ok(())
     }
