@@ -538,7 +538,7 @@ async fn main() {
                                                 .unwrap();
                                         }
                                         //handshake done
-                                        
+
                                         let mut rx = tx.subscribe();
                                         loop {
                                             let (frame, resp_tx) = rx.recv().await.unwrap();
@@ -565,9 +565,7 @@ async fn main() {
                                                         _ = replica.next() => 1,
                                                     };
                                                     println!("replica {port} {acknowledge}");
-                                                    let resp_tx = resp_tx.unwrap();
-                                                    resp_tx.send(acknowledge).await.unwrap();
-                                                    drop(resp_tx);
+                                                    resp_tx.unwrap().send(acknowledge).await.unwrap();
                                                 }
                                                 _ => unimplemented!(),
                                             }
