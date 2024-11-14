@@ -404,6 +404,26 @@ async fn main() {
                                     .send(Frame::Bulk(echo.message.into_bytes().into()))
                                     .await
                                     .unwrap(),
+                                Ok(Command::Rtype(rtype)) => {
+                                    let value = {
+                                        let db = db.lock().unwrap();
+                                        println!("{db:?}");
+                                        let value = db.get(&rtype.key).cloned();
+                                        drop(db);
+                                        value
+                                    };
+                                    if value.is_some() {
+                                        client
+                                            .send(Frame::Simple("string".to_string()))
+                                            .await
+                                            .unwrap();
+                                    } else {
+                                        client
+                                            .send(Frame::Simple("none".to_string()))
+                                            .await
+                                            .unwrap();
+                                    }
+                                }
                                 Ok(Command::Set(set)) => {
                                     received = true;
                                     let expires = set
@@ -483,7 +503,8 @@ async fn main() {
                                         .unwrap();
                                     }
                                 }
-                                Ok(Command::Wait(_wait)) => {
+
+                                Ok(Command::Wait(wait)) => {
                                     println!("receiver: {}", tx.receiver_count());
                                     if !received {
                                         client
