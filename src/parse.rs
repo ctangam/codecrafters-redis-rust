@@ -5,6 +5,7 @@ use bytes::Bytes;
 use crate::frame::Frame;
 
 pub struct Parse {
+    len: usize,
     parts: vec::IntoIter<Frame>,
 }
 
@@ -26,10 +27,15 @@ impl Parse {
     pub fn new(frame: Frame) -> Result<Self, ParseError> {
         match frame {
             Frame::Array(parts) => Ok(Parse {
+                len: parts.len(),
                 parts: parts.into_iter(),
             }),
             frame => Err(format!("protocol error; expected array, got {:?}", frame).into()),
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
     }
 
     fn next(&mut self) -> Result<Frame, ParseError> {

@@ -29,7 +29,7 @@ mod parse;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
-pub type STREAMS = Arc<Mutex<HashMap<String, Vec<(String, Bytes)>>>>;
+pub type STREAMS = Arc<Mutex<HashMap<String, Vec<Vec<(String, Bytes)>>>>>;
 
 async fn parse_dbfile(mut buf: BytesMut, db: DB) {
     println!("{:?}", String::from_utf8_lossy(&buf[..]));
@@ -423,13 +423,13 @@ async fn main() {
                                             .unwrap();
                                     }
                                 }
-                                Ok(Command::Xadd(mut xadd)) => {
+                                Ok(Command::Xadd(xadd)) => {
                                     {
                                         let mut streams = streams.lock().unwrap();
                                         streams
                                             .entry(xadd.stream_key)
-                                            .and_modify(|pairs| pairs.append(&mut xadd.pairs))
-                                            .or_insert(xadd.pairs);
+                                            .and_modify(|pairs| pairs.push(xadd.pairs.clone()))
+                                            .or_insert(vec![xadd.pairs]);
                                         drop(streams);
                                     }
                                     client.send(Frame::Bulk(xadd.id.into())).await.unwrap();

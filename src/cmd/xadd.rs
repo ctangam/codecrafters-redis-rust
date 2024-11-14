@@ -13,8 +13,8 @@ impl Xadd {
         let stream_key = parse.next_string()?;
 
         let id = parse.next_string()?;
-        let mut pairs = Vec::new();
-        while !parse.finish().is_ok() {
+        let mut pairs = Vec::with_capacity(parse.len() - 3);
+        for _ in 0..(parse.len() - 3) / 2 {
             let key = parse.next_string()?;
             let value = parse.next_bytes()?;
             pairs.push((key, value));
