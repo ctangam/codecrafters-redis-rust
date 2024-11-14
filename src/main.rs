@@ -417,7 +417,7 @@ async fn main() {
 
                                     client.send(Frame::Simple("OK".to_string())).await.unwrap();
 
-                                    tx.send((frame, None)).unwrap();
+                                    let _ = tx.send((frame, None));
                                 }
                                 Ok(Command::Get(get)) => {
                                     let value = {
