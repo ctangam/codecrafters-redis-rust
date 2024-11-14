@@ -389,13 +389,12 @@ async fn main() {
                 let config = config.clone();
                 let tx = tx.clone();
                 let offset = offset.clone();
-                
+
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
                     let mut received = false;
                     loop {
                         if let Some(Ok((_, frame))) = client.next().await {
-
                             match Command::from(frame.clone()) {
                                 Ok(Command::Ping(_)) => client
                                     .send(Frame::Simple("PONG".to_string()))
@@ -487,13 +486,15 @@ async fn main() {
                                 Ok(Command::Wait(_wait)) => {
                                     println!("receiver: {}", tx.receiver_count());
                                     if !received {
-                                        client.send(Frame::Integer(tx.receiver_count() as u64)).await.unwrap();
+                                        client
+                                            .send(Frame::Integer(tx.receiver_count() as u64))
+                                            .await
+                                            .unwrap();
                                         continue;
                                     }
                                     let (resp_tx, mut resp_rx) = mpsc::channel::<u64>(32);
                                     tx.send((frame, Some(resp_tx))).unwrap();
-                                    
-                                    
+
                                     let mut acknowledged = 0;
                                     while let Some(n) = resp_rx.recv().await {
                                         acknowledged += n;
@@ -551,6 +552,8 @@ async fn main() {
                                             match Command::from(frame.clone()) {
                                                 Ok(Command::Set(_set)) => {
                                                     replica.send(frame).await.unwrap();
+                                                }
+                                                Ok(Command::Wait(wait)) => {
                                                     replica
                                                         .send(Frame::Array(vec![
                                                             Frame::Bulk(
@@ -563,14 +566,16 @@ async fn main() {
                                                         ]))
                                                         .await
                                                         .unwrap();
-                                                }
-                                                Ok(Command::Wait(wait)) => {
                                                     let acknowledge: u64 = tokio::select! {
                                                         _ = tokio::time::sleep(Duration::from_millis(wait.timeout)) => 0,
                                                         _ = replica.next() => 1,
                                                     };
                                                     println!("replica {port} {acknowledge}");
-                                                    resp_tx.unwrap().send(acknowledge).await.unwrap();
+                                                    resp_tx
+                                                        .unwrap()
+                                                        .send(acknowledge)
+                                                        .await
+                                                        .unwrap();
                                                 }
                                                 _ => unimplemented!(),
                                             }
