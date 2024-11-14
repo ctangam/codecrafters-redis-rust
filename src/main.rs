@@ -4,7 +4,7 @@ use core::str;
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{atomic::AtomicUsize, Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     vec,
 };
@@ -378,6 +378,7 @@ async fn main() {
     }
 
     let (tx, _) = broadcast::channel(32);
+    let offset = Arc::new(AtomicUsize::new(0));
     let listener = TcpListener::bind(address).await.unwrap();
     loop {
         match listener.accept().await {
@@ -387,9 +388,11 @@ async fn main() {
                 let db = db.clone();
                 let config = config.clone();
                 let tx = tx.clone();
+                let offset = offset.clone();
                 
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
+                    let mut received = false;
                     loop {
                         if let Some(Ok((_, frame))) = client.next().await {
 
@@ -403,6 +406,7 @@ async fn main() {
                                     .await
                                     .unwrap(),
                                 Ok(Command::Set(set)) => {
+                                    received = true;
                                     let expires = set
                                         .expire
                                         .and_then(|expire| Instant::now().checked_add(expire));
@@ -481,10 +485,15 @@ async fn main() {
                                     }
                                 }
                                 Ok(Command::Wait(_wait)) => {
+                                    println!("receiver: {}", tx.receiver_count());
+                                    if !received {
+                                        client.send(Frame::Integer(tx.receiver_count() as u64)).await.unwrap();
+                                        continue;
+                                    }
                                     let (resp_tx, mut resp_rx) = mpsc::channel::<u64>(32);
                                     tx.send((frame, Some(resp_tx))).unwrap();
                                     
-                                    println!("receiver: {}", tx.receiver_count());
+                                    
                                     let mut acknowledged = 0;
                                     while let Some(n) = resp_rx.recv().await {
                                         acknowledged += n;
@@ -536,16 +545,12 @@ async fn main() {
                                                 .unwrap();
                                         }
                                         //handshake done
-                                        
                                         let mut rx = tx.subscribe();
                                         loop {
                                             let (frame, resp_tx) = rx.recv().await.unwrap();
                                             match Command::from(frame.clone()) {
                                                 Ok(Command::Set(_set)) => {
                                                     replica.send(frame).await.unwrap();
-                                                    
-                                                }
-                                                Ok(Command::Wait(wait)) => {
                                                     replica
                                                         .send(Frame::Array(vec![
                                                             Frame::Bulk(
@@ -558,6 +563,8 @@ async fn main() {
                                                         ]))
                                                         .await
                                                         .unwrap();
+                                                }
+                                                Ok(Command::Wait(wait)) => {
                                                     let acknowledge: u64 = tokio::select! {
                                                         _ = tokio::time::sleep(Duration::from_millis(wait.timeout)) => 0,
                                                         _ = replica.next() => 1,
