@@ -538,6 +538,7 @@ async fn main() {
                                             acknowledged = result.into_iter().filter(|result| result.is_ok()).count() as u64;
                                         }
                                     }
+                                    println!("acknowledged: {}", acknowledged);
                                 
                                     client
                                         .send(Frame::Integer(acknowledged))
