@@ -4,7 +4,7 @@ use core::str;
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::{atomic::AtomicUsize, Arc, Mutex},
+    sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     vec,
 };
@@ -29,6 +29,7 @@ mod parse;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
+pub type STREAMS = Arc<Mutex<HashMap<String, Vec<(String, Bytes)>>>>;
 
 async fn parse_dbfile(mut buf: BytesMut, db: DB) {
     println!("{:?}", String::from_utf8_lossy(&buf[..]));
@@ -243,8 +244,9 @@ async fn main() {
     let mut role: &'static str = "master";
     let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
     let master_repl_offset = 0;
-    let db = Arc::new(Mutex::new(HashMap::new()));
+    let db: DB = Arc::new(Mutex::new(HashMap::new()));
     let config = Arc::new(Mutex::new(HashMap::new()));
+    let streams: STREAMS = Arc::new(Mutex::new(HashMap::new()));
 
     if let Some(dir) = args.dir.as_deref() {
         config
@@ -378,7 +380,6 @@ async fn main() {
     }
 
     let (tx, _) = broadcast::channel(32);
-    let offset = Arc::new(AtomicUsize::new(0));
     let listener = TcpListener::bind(address).await.unwrap();
     loop {
         match listener.accept().await {
@@ -386,9 +387,9 @@ async fn main() {
                 println!("accepted new connection");
 
                 let db = db.clone();
+                let streams = streams.clone();
                 let config = config.clone();
                 let tx = tx.clone();
-                let offset = offset.clone();
 
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
@@ -405,16 +406,14 @@ async fn main() {
                                     .await
                                     .unwrap(),
                                 Ok(Command::Rtype(rtype)) => {
-                                    let value = {
-                                        let db = db.lock().unwrap();
-                                        println!("{db:?}");
-                                        let value = db.get(&rtype.key).cloned();
-                                        drop(db);
-                                        value
-                                    };
-                                    if value.is_some() {
+                                    if db.lock().unwrap().contains_key(&rtype.key) {
                                         client
                                             .send(Frame::Simple("string".to_string()))
+                                            .await
+                                            .unwrap();
+                                    } else if streams.lock().unwrap().contains_key(&rtype.key) {
+                                        client
+                                            .send(Frame::Simple("stream".to_string()))
                                             .await
                                             .unwrap();
                                     } else {
@@ -423,6 +422,17 @@ async fn main() {
                                             .await
                                             .unwrap();
                                     }
+                                }
+                                Ok(Command::Xadd(mut xadd)) => {
+                                    {
+                                        let mut streams = streams.lock().unwrap();
+                                        streams
+                                            .entry(xadd.stream_key)
+                                            .and_modify(|pairs| pairs.append(&mut xadd.pairs))
+                                            .or_insert(xadd.pairs);
+                                        drop(streams);
+                                    }
+                                    client.send(Frame::Bulk(xadd.id.into())).await.unwrap();
                                 }
                                 Ok(Command::Set(set)) => {
                                     received = true;
@@ -504,7 +514,7 @@ async fn main() {
                                     }
                                 }
 
-                                Ok(Command::Wait(wait)) => {
+                                Ok(Command::Wait(_)) => {
                                     println!("receiver: {}", tx.receiver_count());
                                     if !received {
                                         client

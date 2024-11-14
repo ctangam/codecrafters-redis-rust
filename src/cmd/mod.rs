@@ -10,6 +10,7 @@ use rtype::Rtype;
 use set::Set;
 use unknown::Unknown;
 use wait::Wait;
+use xadd::Xadd;
 
 use crate::{frame::Frame, parse::Parse};
 
@@ -25,6 +26,7 @@ pub mod rtype;
 pub mod set;
 pub mod unknown;
 pub mod wait;
+pub mod xadd;
 
 pub enum Command {
     Ping(Ping),
@@ -39,6 +41,7 @@ pub enum Command {
     Psync(Psync),
     Wait(Wait),
     Rtype(Rtype),
+    Xadd(Xadd),
 }
 
 impl Command {
@@ -62,6 +65,7 @@ impl Command {
             "psync" => Command::Psync(Psync::parse_frames(&mut parse)?),
             "wait" => Command::Wait(Wait::parse_frames(&mut parse)?),
             "type" => Command::Rtype(Rtype::parse_frames(&mut parse)?),
+            "xadd" => Command::Xadd(Xadd::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.
