@@ -29,6 +29,7 @@ mod parse;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
+pub type STREAMS = Arc<Mutex<HashMap<String, Vec<(String, Vec<(String, Bytes)>)>>>>;
 
 async fn parse_dbfile(mut buf: BytesMut, db: DB) {
     println!("{:?}", String::from_utf8_lossy(&buf[..]));
@@ -243,8 +244,9 @@ async fn main() {
     let mut role: &'static str = "master";
     let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
     let master_repl_offset = 0;
-    let db = Arc::new(Mutex::new(HashMap::new()));
+    let db: DB = Arc::new(Mutex::new(HashMap::new()));
     let config = Arc::new(Mutex::new(HashMap::new()));
+    let streams: STREAMS = Arc::new(Mutex::new(HashMap::new()));
 
     if let Some(dir) = args.dir.as_deref() {
         config
@@ -341,7 +343,6 @@ async fn main() {
             let mut offset = 0usize;
             loop {
                 let (n, frame) = master.next().await.unwrap().unwrap();
-                println!("master frame: {:?}", frame);
                 match Command::from(frame) {
                     Ok(Command::Ping(_)) => offset += n,
                     Ok(Command::Set(set)) => {
@@ -386,15 +387,15 @@ async fn main() {
                 println!("accepted new connection");
 
                 let db = db.clone();
+                let streams = streams.clone();
                 let config = config.clone();
                 let tx = tx.clone();
-                
+
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
+                    let mut received = false;
                     loop {
                         if let Some(Ok((_, frame))) = client.next().await {
-                            println!("client frame: {:?}", frame);
-
                             match Command::from(frame.clone()) {
                                 Ok(Command::Ping(_)) => client
                                     .send(Frame::Simple("PONG".to_string()))
@@ -404,7 +405,64 @@ async fn main() {
                                     .send(Frame::Bulk(echo.message.into_bytes().into()))
                                     .await
                                     .unwrap(),
+                                Ok(Command::Rtype(rtype)) => {
+                                    if db.lock().unwrap().contains_key(&rtype.key) {
+                                        client
+                                            .send(Frame::Simple("string".to_string()))
+                                            .await
+                                            .unwrap();
+                                    } else if streams.lock().unwrap().contains_key(&rtype.key) {
+                                        client
+                                            .send(Frame::Simple("stream".to_string()))
+                                            .await
+                                            .unwrap();
+                                    } else {
+                                        client
+                                            .send(Frame::Simple("none".to_string()))
+                                            .await
+                                            .unwrap();
+                                    }
+                                }
+                                Ok(Command::Xadd(xadd)) => {
+                                    let (millis, num) = xadd.id.split_once("-").unwrap();
+                                    let millis = u64::from_str_radix(millis, 10).unwrap();
+                                    let seq = u64::from_str_radix(num, 10).unwrap();
+                                    if millis == 0 && seq == 0 {
+                                        client.send(Frame::Error("ERR The ID specified in XADD must be greater than 0-0".to_string())).await.unwrap();
+                                        continue;
+                                    }
+
+                                    let stream =
+                                        streams.lock().unwrap().get(&xadd.stream_key).cloned();
+                                    if let Some(stream) = stream {
+                                        if let Some(last) = stream.last() {
+                                            let (last_millis, last_seq) =
+                                                last.0.split_once("-").unwrap();
+                                            let last_millis =
+                                                u64::from_str_radix(last_millis, 10).unwrap();
+                                            let last_seq =
+                                                u64::from_str_radix(last_seq, 10).unwrap();
+                                            if millis < last_millis
+                                                || (millis == last_millis && seq <= last_seq)
+                                            {
+                                                client.send(Frame::Error("ERR The ID specified in XADD is equal or smaller than the target stream top item".to_string())).await.unwrap();
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                    streams
+                                        .lock()
+                                        .unwrap()
+                                        .entry(xadd.stream_key)
+                                        .and_modify(|pairs| {
+                                            pairs.push((xadd.id.clone(), xadd.pairs.clone()))
+                                        })
+                                        .or_insert(vec![(xadd.id.clone(), xadd.pairs)]);
+
+                                    client.send(Frame::Bulk(xadd.id.into())).await.unwrap();
+                                }
                                 Ok(Command::Set(set)) => {
+                                    received = true;
                                     let expires = set
                                         .expire
                                         .and_then(|expire| Instant::now().checked_add(expire));
@@ -416,7 +474,7 @@ async fn main() {
 
                                     client.send(Frame::Simple("OK".to_string())).await.unwrap();
 
-                                    tx.send((frame, None)).unwrap();
+                                    let _ = tx.send((frame, None));
                                 }
                                 Ok(Command::Get(get)) => {
                                     let value = {
@@ -482,11 +540,19 @@ async fn main() {
                                         .unwrap();
                                     }
                                 }
-                                Ok(Command::Wait(_wait)) => {
+
+                                Ok(Command::Wait(_)) => {
+                                    println!("receiver: {}", tx.receiver_count());
+                                    if !received {
+                                        client
+                                            .send(Frame::Integer(tx.receiver_count() as u64))
+                                            .await
+                                            .unwrap();
+                                        continue;
+                                    }
                                     let (resp_tx, mut resp_rx) = mpsc::channel::<u64>(32);
                                     tx.send((frame, Some(resp_tx))).unwrap();
-                                    
-                                    println!("receiver: {}", tx.receiver_count());
+
                                     let mut acknowledged = 0;
                                     while let Some(n) = resp_rx.recv().await {
                                         acknowledged += n;
@@ -538,14 +604,14 @@ async fn main() {
                                                 .unwrap();
                                         }
                                         //handshake done
-
                                         let mut rx = tx.subscribe();
                                         loop {
                                             let (frame, resp_tx) = rx.recv().await.unwrap();
-                                            println!("replica {port} frame: {frame:?}");
                                             match Command::from(frame.clone()) {
                                                 Ok(Command::Set(_set)) => {
                                                     replica.send(frame).await.unwrap();
+                                                }
+                                                Ok(Command::Wait(wait)) => {
                                                     replica
                                                         .send(Frame::Array(vec![
                                                             Frame::Bulk(
@@ -558,14 +624,16 @@ async fn main() {
                                                         ]))
                                                         .await
                                                         .unwrap();
-                                                }
-                                                Ok(Command::Wait(wait)) => {
                                                     let acknowledge: u64 = tokio::select! {
                                                         _ = tokio::time::sleep(Duration::from_millis(wait.timeout)) => 0,
                                                         _ = replica.next() => 1,
                                                     };
                                                     println!("replica {port} {acknowledge}");
-                                                    resp_tx.unwrap().send(acknowledge).await.unwrap();
+                                                    resp_tx
+                                                        .unwrap()
+                                                        .send(acknowledge)
+                                                        .await
+                                                        .unwrap();
                                                 }
                                                 _ => unimplemented!(),
                                             }

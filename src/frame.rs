@@ -3,6 +3,8 @@ use core::str;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
+use crate::cmd::Command;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Frame {
     Simple(String),
@@ -17,9 +19,10 @@ pub enum Frame {
 #[test]
 fn test() {
     let mut buf = BytesMut::new();
-    buf.put_slice(b"*3\r\n$8\r\nreplconf\r\n$6\r\ngetack\r\n$1\r\n*\r\n");
-    let frame = FrameCodec.decode(&mut buf).unwrap();
+    buf.put_slice(b"*5\r\n$4\r\nXADD\r\n$5\r\nmango\r\n$3\r\n0-1\r\n$3\r\nfoo\r\n$3\r\nbar\r\n");
+    let (_, frame) = FrameCodec.decode(&mut buf).unwrap().unwrap();
     println!("{:?}", frame);
+    let cmd = Command::from(frame).unwrap();
 }
 
 pub struct FrameCodec;

@@ -6,9 +6,11 @@ use keys::Keys;
 use ping::Ping;
 use psync::Psync;
 use replconf::Replconf;
+use rtype::Rtype;
 use set::Set;
 use unknown::Unknown;
 use wait::Wait;
+use xadd::Xadd;
 
 use crate::{frame::Frame, parse::Parse};
 
@@ -20,9 +22,11 @@ pub mod keys;
 pub mod ping;
 pub mod psync;
 pub mod replconf;
+pub mod rtype;
 pub mod set;
 pub mod unknown;
 pub mod wait;
+pub mod xadd;
 
 pub enum Command {
     Ping(Ping),
@@ -36,6 +40,8 @@ pub enum Command {
     Replconf(Replconf),
     Psync(Psync),
     Wait(Wait),
+    Rtype(Rtype),
+    Xadd(Xadd),
 }
 
 impl Command {
@@ -58,6 +64,8 @@ impl Command {
             "replconf" => Command::Replconf(Replconf::parse_frames(&mut parse)?),
             "psync" => Command::Psync(Psync::parse_frames(&mut parse)?),
             "wait" => Command::Wait(Wait::parse_frames(&mut parse)?),
+            "type" => Command::Rtype(Rtype::parse_frames(&mut parse)?),
+            "xadd" => Command::Xadd(Xadd::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.
