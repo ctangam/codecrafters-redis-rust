@@ -1,24 +1,24 @@
 // Uncomment this block to pass the first stage
 
-use core::{num, str};
+use core::str;
 use std::{
     collections::HashMap,
-    fmt::format,
-    path::{Path, PathBuf},
-    sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex},
+    path::PathBuf,
+    sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     vec,
 };
 
 use bytes::{Buf, Bytes, BytesMut};
 use clap::Parser;
-use cmd::{replconf, wait, Command};
+use cmd::Command;
 use frame::{Frame, FrameCodec};
-use futures_util::{future::join_all, select, SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt};
 use tokio::{
     fs::File,
     io::AsyncReadExt,
     net::{TcpListener, TcpStream},
+    sync::{broadcast, mpsc},
 };
 use tokio_util::codec::Framed;
 
@@ -245,8 +245,6 @@ async fn main() {
     let master_repl_offset = 0;
     let db = Arc::new(Mutex::new(HashMap::new()));
     let config = Arc::new(Mutex::new(HashMap::new()));
-    let replicas: Arc<tokio::sync::Mutex<Vec<Framed<TcpStream, FrameCodec>>>> =
-        Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
     if let Some(dir) = args.dir.as_deref() {
         config
@@ -380,6 +378,7 @@ async fn main() {
         });
     }
 
+    let (tx, _) = broadcast::channel(32);
     let listener = TcpListener::bind(address).await.unwrap();
     loop {
         match listener.accept().await {
@@ -388,7 +387,8 @@ async fn main() {
 
                 let db = db.clone();
                 let config = config.clone();
-                let replicas = replicas.clone();
+                let tx = tx.clone();
+                
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
                     loop {
@@ -416,18 +416,7 @@ async fn main() {
 
                                     client.send(Frame::Simple("OK".to_string())).await.unwrap();
 
-                                    let mut replicas = replicas.lock().await;
-                                    for replica in replicas.iter_mut() {
-                                        replica.send(frame.clone()).await.unwrap();
-                                        replica
-                                            .send(Frame::Array(vec![
-                                                Frame::Bulk("REPLCONF".to_string().into()),
-                                                Frame::Bulk("GETACK".to_string().into()),
-                                                Frame::Bulk("*".to_string().into()),
-                                            ]))
-                                            .await
-                                            .unwrap();
-                                    }
+                                    tx.send((frame, None)).unwrap();
                                 }
                                 Ok(Command::Get(get)) => {
                                     let value = {
@@ -493,57 +482,17 @@ async fn main() {
                                         .unwrap();
                                     }
                                 }
-                                Ok(Command::Replconf(replconf)) => {
-                                    if replconf.port.is_some() || replconf.capa.is_some() {
-                                        client.send(Frame::Simple("OK".to_string())).await.unwrap();
-                                    }
-                                }
-                                Ok(Command::Psync(_)) => {
-                                    client
-                                        .send(Frame::Simple(format!(
-                                            "FULLRESYNC {repl_id} {repl_offset}",
-                                            repl_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
-                                            repl_offset = "0",
-                                        )))
-                                        .await
-                                        .unwrap();
-                                    let content = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
-                                    let content = hex::decode(content).unwrap();
-                                    client
-                                        .send(Frame::File(Bytes::from(content)))
-                                        .await
-                                        .unwrap();
-
-                                    println!("new replica: {}", replicas.lock().await.len() + 1);
-                                    break replicas.lock().await.push(client);
-                                }
-                                Ok(Command::Wait(wait)) => {
+                                Ok(Command::Wait(_wait)) => {
+                                    let (resp_tx, mut resp_rx) = mpsc::channel::<u64>(32);
+                                    tx.send((frame, Some(resp_tx))).unwrap();
+                                    
+                                    println!("receiver: {}", tx.receiver_count());
                                     let mut acknowledged = 0;
-                                    let mut replicas = replicas.lock().await;
-                                    println!("before replicas: {}", replicas.len());
-                                    let mut handlers = Vec::with_capacity(replicas.len());
-                                    let new_replicas = Arc::new(Mutex::new(Vec::new()));
-                                    while let Some(mut replica) = replicas.pop() {
-                                        let new_replicas = new_replicas.clone();
-                                        handlers.push(tokio::spawn(async move {
-                                            replica.next().await.unwrap().unwrap();
-                                            new_replicas.lock().unwrap().push(replica);
-                                        }));
+                                    while let Some(n) = resp_rx.recv().await {
+                                        acknowledged += n;
                                     }
-                                    replicas.append(new_replicas.lock().unwrap().as_mut());
-                                    println!("after replicas: {}", replicas.len());
-                                    tokio::select! {
-                                        _ = tokio::time::sleep(Duration::from_millis(wait.timeout)) => (),
-                                        result = join_all(handlers) => {
-                                            acknowledged = result.into_iter().filter(|result| result.is_ok()).count() as u64;
-                                        }
-                                    }
-                                    println!("acknowledged: {}", acknowledged);
-                                
-                                    client
-                                        .send(Frame::Integer(acknowledged))
-                                        .await
-                                        .unwrap();
+                                    println!("num of replicas acknowledged: {acknowledged}");
+                                    client.send(Frame::Integer(acknowledged)).await.unwrap();
                                 }
                                 Ok(Command::Unknown(_)) => {
                                     continue;
@@ -552,6 +501,81 @@ async fn main() {
                                     println!("error: {}", e);
                                     client.send(Frame::Error(e.to_string())).await.unwrap();
                                 }
+
+                                Ok(Command::Replconf(replconf)) => {
+                                    let port = replconf.port.unwrap();
+                                    let mut replica = client;
+                                    break tokio::spawn(async move {
+                                        replica
+                                            .send(Frame::Simple("OK".to_string()))
+                                            .await
+                                            .unwrap();
+                                        let (_, frame) = replica.next().await.unwrap().unwrap();
+                                        if let Ok(Command::Replconf(_replconf)) =
+                                            Command::from(frame)
+                                        {
+                                            replica
+                                                .send(Frame::Simple("OK".to_string()))
+                                                .await
+                                                .unwrap();
+                                        }
+                                        let (_, frame) = replica.next().await.unwrap().unwrap();
+                                        if let Ok(Command::Psync(_)) = Command::from(frame) {
+                                            replica
+                                                .send(Frame::Simple(format!(
+                                                    "FULLRESYNC {repl_id} {repl_offset}",
+                                                    repl_id =
+                                                        "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
+                                                    repl_offset = "0",
+                                                )))
+                                                .await
+                                                .unwrap();
+                                            let content = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
+                                            let content = hex::decode(content).unwrap();
+                                            replica
+                                                .send(Frame::File(Bytes::from(content)))
+                                                .await
+                                                .unwrap();
+                                        }
+                                        //handshake done
+                                        
+                                        let mut rx = tx.subscribe();
+                                        loop {
+                                            let (frame, resp_tx) = rx.recv().await.unwrap();
+                                            println!("replica {port} frame: {frame:?}");
+                                            match Command::from(frame.clone()) {
+                                                Ok(Command::Set(_set)) => {
+                                                    replica.send(frame).await.unwrap();
+                                                    replica
+                                                        .send(Frame::Array(vec![
+                                                            Frame::Bulk(
+                                                                "REPLCONF".to_string().into(),
+                                                            ),
+                                                            Frame::Bulk(
+                                                                "GETACK".to_string().into(),
+                                                            ),
+                                                            Frame::Bulk("*".to_string().into()),
+                                                        ]))
+                                                        .await
+                                                        .unwrap();
+                                                }
+                                                Ok(Command::Wait(wait)) => {
+                                                    let acknowledge: u64 = tokio::select! {
+                                                        _ = tokio::time::sleep(Duration::from_millis(wait.timeout)) => 0,
+                                                        _ = replica.next() => 1,
+                                                    };
+                                                    println!("replica {port} {acknowledge}");
+                                                    let resp_tx = resp_tx.unwrap();
+                                                    resp_tx.send(acknowledge).await.unwrap();
+                                                    drop(resp_tx);
+                                                }
+                                                _ => unimplemented!(),
+                                            }
+                                        }
+                                    });
+                                }
+
+                                _ => unreachable!(),
                             }
                         }
                     }
