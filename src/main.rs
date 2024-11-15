@@ -439,12 +439,66 @@ async fn main() {
                                                 })
                                                 .or_insert(vec![(new_id, xadd.pairs)]);
 
-                                            client.send(Frame::Bulk(format!("{}-{}", new_id.0, new_id.1).into())).await.unwrap();
+                                            client
+                                                .send(Frame::Bulk(
+                                                    format!("{}-{}", new_id.0, new_id.1).into(),
+                                                ))
+                                                .await
+                                                .unwrap();
                                         }
                                         Err(e) => {
                                             client.send(Frame::Error(e.to_string())).await.unwrap()
                                         }
                                     }
+                                }
+                                Ok(Command::Xrange(xrange)) => {
+                                    let entries = streams
+                                        .lock()
+                                        .unwrap()
+                                        .get(&xrange.stream_key)
+                                        .and_then(|s| {
+                                            let start_index = s
+                                                .binary_search_by(|e| {
+                                                    e.0 .0.cmp(&xrange.start).then(e.0 .1.cmp(&0))
+                                                })
+                                                .unwrap();
+                                            let end_index = s
+                                                .binary_search_by(|e| {
+                                                    e.0 .0.cmp(&xrange.end).then(e.0 .1.cmp(&0))
+                                                })
+                                                .unwrap();
+                                            let entries = s[start_index..=end_index].to_vec();
+                                            Some(entries)
+                                        });
+                                    let frame = if let Some(entries) = entries {
+                                        let entries = entries
+                                            .into_iter()
+                                            .map(|entry| {
+                                                let pairs = entry
+                                                    .1
+                                                    .into_iter()
+                                                    .flat_map(|pair| {
+                                                        vec![
+                                                            Frame::Bulk(pair.0.into()),
+                                                            Frame::Bulk(pair.1.into()),
+                                                        ]
+                                                        .into_iter()
+                                                    })
+                                                    .collect();
+                                                Frame::Array(vec![
+                                                    Frame::Bulk(
+                                                        format!("{}-{}", entry.0 .0, entry.0 .1)
+                                                            .into(),
+                                                    ),
+                                                    Frame::Array(pairs),
+                                                ])
+                                            })
+                                            .collect();
+                                        Frame::Array(entries)
+                                    } else {
+                                        Frame::Null
+                                    };
+                                    client.send(frame).await.unwrap();
                                 }
                                 Ok(Command::Set(set)) => {
                                     received = true;
@@ -648,7 +702,10 @@ fn test_parse_id() {
 fn parse_id(new_id: &str, last_id: Option<(u128, u64)>) -> Result<(u128, u64)> {
     match new_id.split_once("-") {
         None => {
-            let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+            let millis = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
             let mut seq = 0;
             if let Some((last_millis, last_seq)) = last_id {
                 if millis == last_millis {

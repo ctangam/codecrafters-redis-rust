@@ -11,6 +11,7 @@ use set::Set;
 use unknown::Unknown;
 use wait::Wait;
 use xadd::Xadd;
+use xrange::Xrange;
 
 use crate::{frame::Frame, parse::Parse};
 
@@ -27,6 +28,7 @@ pub mod set;
 pub mod unknown;
 pub mod wait;
 pub mod xadd;
+pub mod xrange;
 
 pub enum Command {
     Ping(Ping),
@@ -42,6 +44,7 @@ pub enum Command {
     Wait(Wait),
     Rtype(Rtype),
     Xadd(Xadd),
+    Xrange(Xrange),
 }
 
 impl Command {
@@ -66,6 +69,7 @@ impl Command {
             "wait" => Command::Wait(Wait::parse_frames(&mut parse)?),
             "type" => Command::Rtype(Rtype::parse_frames(&mut parse)?),
             "xadd" => Command::Xadd(Xadd::parse_frames(&mut parse)?),
+            "xrange" => Command::Xrange(Xrange::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.
