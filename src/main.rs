@@ -716,6 +716,7 @@ fn parse_id(new_id: &str, last_id: Option<(u128, u64)>) -> Result<(u128, u64)> {
             }
             Ok((millis, seq))
         }
+        Some(("", "")) => Ok((0, 1)),
         Some((millis, "*")) | Some((millis, "")) => {
             let millis = u128::from_str_radix(millis, 10).unwrap();
             let mut seq = if millis == 0 { 1 } else { 0 };
