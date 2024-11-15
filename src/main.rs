@@ -29,7 +29,7 @@ mod parse;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
-pub type STREAMS = Arc<Mutex<HashMap<String, Vec<(String, Vec<(String, Bytes)>)>>>>;
+pub type STREAMS = Arc<Mutex<HashMap<String, Vec<((u64, u64), Vec<(String, Bytes)>)>>>>;
 
 async fn parse_dbfile(mut buf: BytesMut, db: DB) {
     println!("{:?}", String::from_utf8_lossy(&buf[..]));
@@ -423,55 +423,28 @@ async fn main() {
                                             .unwrap();
                                     }
                                 }
-                                Ok(Command::Xadd(mut xadd)) => {
+                                Ok(Command::Xadd(xadd)) => {
                                     let stream =
                                         streams.lock().unwrap().get(&xadd.stream_key).cloned();
-                                    let (millis, num) = xadd.id.split_once("-").unwrap();
-                                    let millis = u64::from_str_radix(millis, 10).unwrap();
-                                    let mut seq = if millis == 0 {
-                                        1
-                                    } else {
-                                        0
-                                    };
+                                    let last_id =
+                                        stream.and_then(|s| s.last().and_then(|e| Some(e.0)));
+                                    match parse_id(&xadd.id, last_id) {
+                                        Ok(new_id) => {
+                                            streams
+                                                .lock()
+                                                .unwrap()
+                                                .entry(xadd.stream_key)
+                                                .and_modify(|pairs| {
+                                                    pairs.push((new_id, xadd.pairs.clone()))
+                                                })
+                                                .or_insert(vec![(new_id, xadd.pairs)]);
 
-                                    if let Some(stream) = stream {
-                                        if let Some(last) = stream.last() {
-                                            let (last_millis, last_seq) =
-                                                last.0.split_once("-").unwrap();
-                                            let last_millis =
-                                                u64::from_str_radix(last_millis, 10).unwrap();
-                                            let last_seq =
-                                                u64::from_str_radix(last_seq, 10).unwrap();
-                                            if num == "*"{
-                                                if millis == last_millis {
-                                                    seq = last_seq + 1;
-                                                }
-                                            } else {
-                                                seq = u64::from_str_radix(num, 10).unwrap();
-                                                if millis == 0 && seq == 0 {
-                                                    client.send(Frame::Error("ERR The ID specified in XADD must be greater than 0-0".to_string())).await.unwrap();
-                                                    continue;
-                                                }
-                                                if millis < last_millis
-                                                    || (millis == last_millis && seq <= last_seq)
-                                                {
-                                                    client.send(Frame::Error("ERR The ID specified in XADD is equal or smaller than the target stream top item".to_string())).await.unwrap();
-                                                    continue;
-                                                }
-                                            }
+                                            client.send(Frame::Bulk(xadd.id.into())).await.unwrap();
+                                        }
+                                        Err(e) => {
+                                            client.send(Frame::Error(e.to_string())).await.unwrap()
                                         }
                                     }
-                                    xadd.id = format!("{}-{}", millis, seq);
-                                    streams
-                                        .lock()
-                                        .unwrap()
-                                        .entry(xadd.stream_key)
-                                        .and_modify(|pairs| {
-                                            pairs.push((xadd.id.clone(), xadd.pairs.clone()))
-                                        })
-                                        .or_insert(vec![(xadd.id.clone(), xadd.pairs)]);
-
-                                    client.send(Frame::Bulk(xadd.id.into())).await.unwrap();
                                 }
                                 Ok(Command::Set(set)) => {
                                     received = true;
@@ -662,6 +635,35 @@ async fn main() {
             Err(e) => {
                 println!("error: {}", e);
             }
+        }
+    }
+}
+
+fn parse_id(new_id: &str, last_id: Option<(u64, u64)>) -> Result<(u64, u64)> {
+    match new_id.split_once("-") {
+        None => Ok((0, 1)),
+        Some((millis, "*")) => {
+            let millis = u64::from_str_radix(millis, 10).unwrap();
+            let mut seq = if millis == 0 { 1 } else { 0 };
+            if let Some((last_millis, last_seq)) = last_id {
+                if millis == last_millis {
+                    seq = last_seq + 1;
+                }
+            }
+            Ok((millis, seq))
+        }
+        Some((millis, seq)) => {
+            let millis = u64::from_str_radix(millis, 10).unwrap();
+            let seq = u64::from_str_radix(seq, 10).unwrap();
+            if millis == 0 && seq == 0 {
+                return Err("ERR The ID specified in XADD must be greater than 0-0".into());
+            }
+            if let Some((last_millis, last_seq)) = last_id {
+                if millis < last_millis || (millis == last_millis && seq <= last_seq) {
+                    return Err("ERR The ID specified in XADD is equal or smaller than the target stream top item".into());
+                }
+            }
+            Ok((millis, seq))
         }
     }
 }
