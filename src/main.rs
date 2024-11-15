@@ -29,7 +29,7 @@ mod parse;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
-pub type STREAMS = Arc<Mutex<HashMap<String, Vec<((u64, u64), Vec<(String, Bytes)>)>>>>;
+pub type STREAMS = Arc<Mutex<HashMap<String, Vec<((u128, u64), Vec<(String, Bytes)>)>>>>;
 
 async fn parse_dbfile(mut buf: BytesMut, db: DB) {
     println!("{:?}", String::from_utf8_lossy(&buf[..]));
@@ -639,11 +639,26 @@ async fn main() {
     }
 }
 
-fn parse_id(new_id: &str, last_id: Option<(u64, u64)>) -> Result<(u64, u64)> {
+#[test]
+fn test_parse_id() {
+    let now = SystemTime::now();
+    println!("{}", now.duration_since(UNIX_EPOCH).unwrap().as_millis());
+}
+
+fn parse_id(new_id: &str, last_id: Option<(u128, u64)>) -> Result<(u128, u64)> {
     match new_id.split_once("-") {
-        None => Ok((0, 1)),
+        None => {
+            let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+            let mut seq = 0;
+            if let Some((last_millis, last_seq)) = last_id {
+                if millis == last_millis {
+                    seq = last_seq + 1;
+                }
+            }
+            Ok((millis, seq))
+        }
         Some((millis, "*")) => {
-            let millis = u64::from_str_radix(millis, 10).unwrap();
+            let millis = u128::from_str_radix(millis, 10).unwrap();
             let mut seq = if millis == 0 { 1 } else { 0 };
             if let Some((last_millis, last_seq)) = last_id {
                 if millis == last_millis {
@@ -653,7 +668,7 @@ fn parse_id(new_id: &str, last_id: Option<(u64, u64)>) -> Result<(u64, u64)> {
             Ok((millis, seq))
         }
         Some((millis, seq)) => {
-            let millis = u64::from_str_radix(millis, 10).unwrap();
+            let millis = u128::from_str_radix(millis, 10).unwrap();
             let seq = u64::from_str_radix(seq, 10).unwrap();
             if millis == 0 && seq == 0 {
                 return Err("ERR The ID specified in XADD must be greater than 0-0".into());
