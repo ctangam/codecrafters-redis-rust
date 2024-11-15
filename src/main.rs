@@ -452,12 +452,12 @@ async fn main() {
                                     }
                                 }
                                 Ok(Command::Xrange(xrange)) => {
-                                    let start = if &xrange.start == "-" {
+                                    let start = if &xrange.start != "-" {
                                         parse_id(&xrange.start, None).ok()
                                     } else {
                                         None
                                     };
-                                    let end = if &xrange.end == "+" {
+                                    let end = if &xrange.end != "+" {
                                         parse_id(&xrange.end, None).ok()
                                     } else {
                                         None
