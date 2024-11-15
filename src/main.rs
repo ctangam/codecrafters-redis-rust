@@ -452,6 +452,8 @@ async fn main() {
                                     }
                                 }
                                 Ok(Command::Xrange(xrange)) => {
+                                    let start = parse_id(&xrange.start, None).unwrap();
+                                    let end = parse_id(&xrange.end, None).unwrap();
                                     let entries = streams
                                         .lock()
                                         .unwrap()
@@ -459,12 +461,12 @@ async fn main() {
                                         .and_then(|s| {
                                             let start_index = s
                                                 .binary_search_by(|e| {
-                                                    e.0 .0.cmp(&xrange.start).then(e.0 .1.cmp(&0))
+                                                    e.0.0.cmp(&start.0).then(e.0 .1.cmp(&start.1))
                                                 })
                                                 .unwrap();
                                             let end_index = s
                                                 .binary_search_by(|e| {
-                                                    e.0 .0.cmp(&xrange.end).then(e.0 .1.cmp(&0))
+                                                    e.0 .0.cmp(&end.0).then(e.0 .1.cmp(&end.1))
                                                 })
                                                 .unwrap();
                                             let entries = s[start_index..=end_index].to_vec();
@@ -714,7 +716,7 @@ fn parse_id(new_id: &str, last_id: Option<(u128, u64)>) -> Result<(u128, u64)> {
             }
             Ok((millis, seq))
         }
-        Some((millis, "*")) => {
+        Some((millis, "*")) | Some((millis, "")) => {
             let millis = u128::from_str_radix(millis, 10).unwrap();
             let mut seq = if millis == 0 { 1 } else { 0 };
             if let Some((last_millis, last_seq)) = last_id {
