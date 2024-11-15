@@ -442,7 +442,7 @@ async fn main() {
                                                 u64::from_str_radix(last_millis, 10).unwrap();
                                             let last_seq =
                                                 u64::from_str_radix(last_seq, 10).unwrap();
-                                            if num == "*" {
+                                            if num == "*" && last_millis == millis {
                                                 seq = last_seq + 1;
                                             } else {
                                                 seq = u64::from_str_radix(num, 10).unwrap();
