@@ -423,17 +423,17 @@ async fn main() {
                                             .unwrap();
                                     }
                                 }
-                                Ok(Command::Xadd(xadd)) => {
-                                    let (millis, num) = xadd.id.split_once("-").unwrap();
-                                    let millis = u64::from_str_radix(millis, 10).unwrap();
-                                    let seq = u64::from_str_radix(num, 10).unwrap();
-                                    if millis == 0 && seq == 0 {
-                                        client.send(Frame::Error("ERR The ID specified in XADD must be greater than 0-0".to_string())).await.unwrap();
-                                        continue;
-                                    }
-
+                                Ok(Command::Xadd(mut xadd)) => {
                                     let stream =
                                         streams.lock().unwrap().get(&xadd.stream_key).cloned();
+                                    let (millis, num) = xadd.id.split_once("-").unwrap();
+                                    let millis = u64::from_str_radix(millis, 10).unwrap();
+                                    let mut seq = if millis == 0 {
+                                        1
+                                    } else {
+                                        0
+                                    };
+
                                     if let Some(stream) = stream {
                                         if let Some(last) = stream.last() {
                                             let (last_millis, last_seq) =
@@ -442,14 +442,24 @@ async fn main() {
                                                 u64::from_str_radix(last_millis, 10).unwrap();
                                             let last_seq =
                                                 u64::from_str_radix(last_seq, 10).unwrap();
-                                            if millis < last_millis
-                                                || (millis == last_millis && seq <= last_seq)
-                                            {
-                                                client.send(Frame::Error("ERR The ID specified in XADD is equal or smaller than the target stream top item".to_string())).await.unwrap();
-                                                continue;
+                                            if num == "*" {
+                                                seq = last_seq + 1;
+                                            } else {
+                                                seq = u64::from_str_radix(num, 10).unwrap();
+                                                if millis == 0 && seq == 0 {
+                                                    client.send(Frame::Error("ERR The ID specified in XADD must be greater than 0-0".to_string())).await.unwrap();
+                                                    continue;
+                                                }
+                                                if millis < last_millis
+                                                    || (millis == last_millis && seq <= last_seq)
+                                                {
+                                                    client.send(Frame::Error("ERR The ID specified in XADD is equal or smaller than the target stream top item".to_string())).await.unwrap();
+                                                    continue;
+                                                }
                                             }
                                         }
                                     }
+                                    xadd.id = format!("{}-{}", millis, seq);
                                     streams
                                         .lock()
                                         .unwrap()
