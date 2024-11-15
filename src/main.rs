@@ -439,7 +439,7 @@ async fn main() {
                                                 })
                                                 .or_insert(vec![(new_id, xadd.pairs)]);
 
-                                            client.send(Frame::Bulk(xadd.id.into())).await.unwrap();
+                                            client.send(Frame::Bulk(format!("{}-{}", new_id.0, new_id.1).into())).await.unwrap();
                                         }
                                         Err(e) => {
                                             client.send(Frame::Error(e.to_string())).await.unwrap()
