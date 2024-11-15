@@ -561,7 +561,7 @@ async fn main() {
                                                 ])
                                             })
                                             .collect();
-                                        Frame::Array(vec![Frame::Bulk(xread.stream_key.into()), Frame::Array(entries)])
+                                        Frame::Array(vec![Frame::Array(vec![Frame::Bulk(xread.stream_key.into()), Frame::Array(entries)])])
                                     } else {
                                         Frame::Null
                                     };
