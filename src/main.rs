@@ -545,7 +545,7 @@ async fn main() {
                                                     };
 
                                                     let entries = s[start_index..].to_vec();
-                                                    Some(entries)
+                                                    if entries.is_empty() {None} else {Some(entries)}
                                                 });
                                             (stream_key, entries)
                                         })
