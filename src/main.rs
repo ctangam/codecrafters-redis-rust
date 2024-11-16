@@ -517,54 +517,72 @@ async fn main() {
                                     client.send(frame).await.unwrap();
                                 }
                                 Ok(Command::Xread(xread)) => {
-                                    let start = parse_id(&xread.id, None).ok();
-                                    let entries = streams
-                                        .lock()
-                                        .unwrap()
-                                        .get(&xread.stream_key)
-                                        .and_then(|s| {
-                                            let start_index = if let Some(start) = start {
-                                                match s.binary_search_by(|e| {
-                                                    e.0 .0.cmp(&start.0).then(e.0 .1.cmp(&start.1))
-                                                }) {
-                                                    Ok(i) => i + 1,
-                                                    Err(i) => i,
-                                                }
-                                            } else {
-                                                0
-                                            };
+                                    let streams = xread
+                                        .streams
+                                        .into_iter()
+                                        .map(|(stream_key, id)| {
+                                            let start = parse_id(&id, None).ok();
+                                            let entries = streams
+                                                .lock()
+                                                .unwrap()
+                                                .get(&stream_key)
+                                                .and_then(|s| {
+                                                    let start_index = if let Some(start) = start {
+                                                        match s.binary_search_by(|e| {
+                                                            e.0 .0
+                                                                .cmp(&start.0)
+                                                                .then(e.0 .1.cmp(&start.1))
+                                                        }) {
+                                                            Ok(i) => i + 1,
+                                                            Err(i) => i,
+                                                        }
+                                                    } else {
+                                                        0
+                                                    };
 
-                                            let entries = s[start_index..].to_vec();
-                                            Some(entries)
-                                        });
-                                    let frame = if let Some(entries) = entries {
-                                        let entries = entries
-                                            .into_iter()
-                                            .map(|entry| {
-                                                let pairs = entry
-                                                    .1
+                                                    let entries = s[start_index..].to_vec();
+                                                    Some(entries)
+                                                });
+                                            (stream_key, entries)
+                                        })
+                                        .map(|(stream_key, entries)| {
+                                            if let Some(entries) = entries {
+                                                let entries = entries
                                                     .into_iter()
-                                                    .flat_map(|pair| {
-                                                        vec![
-                                                            Frame::Bulk(pair.0.into()),
-                                                            Frame::Bulk(pair.1.into()),
-                                                        ]
-                                                        .into_iter()
+                                                    .map(|entry| {
+                                                        let pairs = entry
+                                                            .1
+                                                            .into_iter()
+                                                            .flat_map(|pair| {
+                                                                vec![
+                                                                    Frame::Bulk(pair.0.into()),
+                                                                    Frame::Bulk(pair.1.into()),
+                                                                ]
+                                                                .into_iter()
+                                                            })
+                                                            .collect();
+                                                        Frame::Array(vec![
+                                                            Frame::Bulk(
+                                                                format!(
+                                                                    "{}-{}",
+                                                                    entry.0 .0, entry.0 .1
+                                                                )
+                                                                .into(),
+                                                            ),
+                                                            Frame::Array(pairs),
+                                                        ])
                                                     })
                                                     .collect();
                                                 Frame::Array(vec![
-                                                    Frame::Bulk(
-                                                        format!("{}-{}", entry.0 .0, entry.0 .1)
-                                                            .into(),
-                                                    ),
-                                                    Frame::Array(pairs),
+                                                    Frame::Bulk(stream_key.into()),
+                                                    Frame::Array(entries),
                                                 ])
-                                            })
-                                            .collect();
-                                        Frame::Array(vec![Frame::Array(vec![Frame::Bulk(xread.stream_key.into()), Frame::Array(entries)])])
-                                    } else {
-                                        Frame::Null
-                                    };
+                                            } else {
+                                                Frame::Null
+                                            }
+                                        })
+                                        .collect();
+                                    let frame = Frame::Array(streams);
                                     client.send(frame).await.unwrap();
                                 }
                                 Ok(Command::Set(set)) => {
