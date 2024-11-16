@@ -380,6 +380,7 @@ async fn main() {
     }
 
     let (tx, _) = broadcast::channel(32);
+    let (streams_tx, _) = broadcast::channel(32);
     let listener = TcpListener::bind(address).await.unwrap();
     loop {
         match listener.accept().await {
@@ -390,6 +391,7 @@ async fn main() {
                 let streams = streams.clone();
                 let config = config.clone();
                 let tx = tx.clone();
+                let streams_tx = streams_tx.clone();
 
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
@@ -433,11 +435,11 @@ async fn main() {
                                             streams
                                                 .lock()
                                                 .unwrap()
-                                                .entry(xadd.stream_key)
+                                                .entry(xadd.stream_key.clone())
                                                 .and_modify(|pairs| {
                                                     pairs.push((new_id, xadd.pairs.clone()))
                                                 })
-                                                .or_insert(vec![(new_id, xadd.pairs)]);
+                                                .or_insert(vec![(new_id, xadd.pairs.clone())]);
 
                                             client
                                                 .send(Frame::Bulk(
@@ -445,6 +447,11 @@ async fn main() {
                                                 ))
                                                 .await
                                                 .unwrap();
+
+                                            streams_tx.send((
+                                                xadd.stream_key,
+                                                Some(vec![(new_id, xadd.pairs)]),
+                                            ));
                                         }
                                         Err(e) => {
                                             client.send(Frame::Error(e.to_string())).await.unwrap()
@@ -517,38 +524,74 @@ async fn main() {
                                     client.send(frame).await.unwrap();
                                 }
                                 Ok(Command::Xread(xread)) => {
-                                    if let Some(block_millis) = xread.block_millis {
-                                        tokio::time::sleep(Duration::from_millis(block_millis))
-                                            .await;
-                                    }
-                                    let streams: Vec<_> = xread
-                                        .streams
-                                        .into_iter()
-                                        .map(|(stream_key, id)| {
-                                            let start = parse_id(&id, None).ok();
-                                            let entries = streams
-                                                .lock()
-                                                .unwrap()
-                                                .get(&stream_key)
-                                                .and_then(|s| {
-                                                    let start_index = if let Some(start) = start {
-                                                        match s.binary_search_by(|e| {
-                                                            e.0 .0
-                                                                .cmp(&start.0)
-                                                                .then(e.0 .1.cmp(&start.1))
-                                                        }) {
-                                                            Ok(i) => i + 1,
-                                                            Err(i) => i,
-                                                        }
-                                                    } else {
-                                                        0
-                                                    };
+                                    let mut streams_rx = streams_tx.subscribe();
+                                    let mut results = Vec::new();
+                                    while results.is_empty() {
+                                        results = xread
+                                            .streams
+                                            .iter()
+                                            .map(|(stream_key, id)| {
+                                                let start = parse_id(&id, None).ok();
+                                                let entries = streams
+                                                    .lock()
+                                                    .unwrap()
+                                                    .get(stream_key)
+                                                    .and_then(|s| {
+                                                        let start_index = if let Some(start) = start
+                                                        {
+                                                            match s.binary_search_by(|e| {
+                                                                e.0 .0
+                                                                    .cmp(&start.0)
+                                                                    .then(e.0 .1.cmp(&start.1))
+                                                            }) {
+                                                                Ok(i) => i + 1,
+                                                                Err(i) => i,
+                                                            }
+                                                        } else {
+                                                            0
+                                                        };
 
-                                                    let entries = s[start_index..].to_vec();
-                                                    if entries.is_empty() {None} else {Some(entries)}
-                                                });
-                                            (stream_key, entries)
-                                        })
+                                                        let entries = s[start_index..].to_vec();
+                                                        if entries.is_empty() {
+                                                            None
+                                                        } else {
+                                                            Some(entries)
+                                                        }
+                                                    });
+                                                (stream_key.clone(), entries)
+                                            })
+                                            .collect();
+
+                                        if let Some(block_millis) = xread.block_millis {
+                                            if block_millis != 0 {
+                                                tokio::select! {
+                                                    _ = tokio::time::sleep(Duration::from_millis(
+                                                        block_millis,
+                                                    )) => {},
+                                                    Ok(stream) = streams_rx.recv() => {
+                                                        if xread.streams.iter().find(|(key, _)| *key == stream.0).is_some() {
+                                                            results = vec![stream];
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                loop {
+                                                    let stream = streams_rx.recv().await.unwrap();
+                                                    if xread
+                                                        .streams
+                                                        .iter()
+                                                        .find(|(key, _)| *key == stream.0)
+                                                        .is_some()
+                                                    {
+                                                        results = vec![stream];
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        };
+                                    }
+                                    let streams: Vec<_> = results
+                                        .into_iter()
                                         .filter_map(|(stream_key, entries)| {
                                             if let Some(entries) = entries {
                                                 let entries = entries
@@ -586,10 +629,11 @@ async fn main() {
                                             }
                                         })
                                         .collect();
-                                    let frame = if !streams.is_empty() {
-                                        Frame::Array(streams)
-                                    } else {
+
+                                    let frame = if streams.is_empty() {
                                         Frame::Null
+                                    } else {
+                                        Frame::Array(streams)
                                     };
                                     client.send(frame).await.unwrap();
                                 }
