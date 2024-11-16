@@ -517,7 +517,11 @@ async fn main() {
                                     client.send(frame).await.unwrap();
                                 }
                                 Ok(Command::Xread(xread)) => {
-                                    let streams = xread
+                                    if let Some(block_millis) = xread.block_millis {
+                                        tokio::time::sleep(Duration::from_millis(block_millis))
+                                            .await;
+                                    }
+                                    let streams: Vec<_> = xread
                                         .streams
                                         .into_iter()
                                         .map(|(stream_key, id)| {
@@ -545,7 +549,7 @@ async fn main() {
                                                 });
                                             (stream_key, entries)
                                         })
-                                        .map(|(stream_key, entries)| {
+                                        .filter_map(|(stream_key, entries)| {
                                             if let Some(entries) = entries {
                                                 let entries = entries
                                                     .into_iter()
@@ -573,16 +577,20 @@ async fn main() {
                                                         ])
                                                     })
                                                     .collect();
-                                                Frame::Array(vec![
+                                                Some(Frame::Array(vec![
                                                     Frame::Bulk(stream_key.into()),
                                                     Frame::Array(entries),
-                                                ])
+                                                ]))
                                             } else {
-                                                Frame::Null
+                                                None
                                             }
                                         })
                                         .collect();
-                                    let frame = Frame::Array(streams);
+                                    let frame = if !streams.is_empty() {
+                                        Frame::Array(streams)
+                                    } else {
+                                        Frame::Null
+                                    };
                                     client.send(frame).await.unwrap();
                                 }
                                 Ok(Command::Set(set)) => {
