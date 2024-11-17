@@ -678,10 +678,15 @@ async fn main() {
                                 }
                                 Ok(Command::Exec(_)) => {
                                     if trans {
-                                        for cmd in &queue {
-                                            let frame = cmd.exec(env.clone()).await;
-                                            client.send(frame).await.unwrap();
+                                        if queue.is_empty() {
+                                            client.send(Frame::Array(vec![])).await.unwrap();
+                                        } else {
+                                            for cmd in &queue {
+                                                let frame = cmd.exec(env.clone()).await;
+                                                client.send(frame).await.unwrap();
+                                            }
                                         }
+                                        trans = false;
                                     } else {
                                         client
                                             .send(Frame::Error("ERR EXEC without MULTI".into()))
