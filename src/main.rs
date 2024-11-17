@@ -272,6 +272,7 @@ async fn main() {
     let mut role: &'static str = "master";
     let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
     let master_repl_offset = 0;
+    
     let env = Env::new();
 
     if let Some(dir) = args.dir.as_deref() {
