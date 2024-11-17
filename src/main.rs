@@ -678,14 +678,15 @@ async fn main() {
                                 }
                                 Ok(Command::Exec(_)) => {
                                     if trans {
-                                        if queue.is_empty() {
-                                            client.send(Frame::Array(vec![])).await.unwrap();
-                                        } else {
-                                            for cmd in &queue {
-                                                let frame = cmd.exec(env.clone()).await;
-                                                client.send(frame).await.unwrap();
-                                            }
+                                        let mut frames = Vec::with_capacity(queue.len());
+
+                                        for cmd in &queue {
+                                            let frame = cmd.exec(env.clone()).await;
+                                            frames.push(frame);
                                         }
+
+                                        client.send(Frame::Array(frames)).await.unwrap();
+
                                         trans = false;
                                     } else {
                                         client
