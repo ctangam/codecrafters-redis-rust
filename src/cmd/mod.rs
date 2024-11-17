@@ -116,7 +116,7 @@ impl Executor for Command {
             Command::Ping(ping) => todo!(),
             Command::Echo(echo) => todo!(),
             Command::Set(set) => set.exec(env).await,
-            Command::Get(get) => todo!(),
+            Command::Get(get) => get.exec(env).await,
             Command::Unknown(unknown) => todo!(),
             Command::ConfigGet(config_get) => todo!(),
             Command::Keys(keys) => todo!(),
