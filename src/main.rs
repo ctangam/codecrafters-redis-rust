@@ -686,11 +686,21 @@ async fn main() {
                                         }
 
                                         client.send(Frame::Array(frames)).await.unwrap();
-
                                         trans = false;
                                     } else {
                                         client
                                             .send(Frame::Error("ERR EXEC without MULTI".into()))
+                                            .await
+                                            .unwrap();
+                                    }
+                                }
+                                Ok(Command::Discard(_)) => {
+                                    if trans {
+                                        client.send(Frame::Simple("OK".into())).await.unwrap();
+                                        trans = false;
+                                    } else {
+                                        client
+                                            .send(Frame::Error("ERR DISCARD without MULTI".into()))
                                             .await
                                             .unwrap();
                                     }

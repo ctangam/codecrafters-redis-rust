@@ -1,1 +1,1 @@
-pub struct Multi {}
+pub struct Multi;

@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use config_get::ConfigGet;
+use discard::Discard;
 use echo::Echo;
 use exec::Exec;
 use get::Get;
@@ -38,6 +39,7 @@ pub mod wait;
 pub mod xadd;
 pub mod xrange;
 pub mod xread;
+pub mod discard;
 
 pub enum Command {
     Ping(Ping),
@@ -58,6 +60,7 @@ pub enum Command {
     Incr(Incr),
     Multi(Multi),
     Exec(Exec),
+    Discard(Discard),
 }
 
 impl Command {
@@ -66,14 +69,12 @@ impl Command {
         let command_name = parse.next_string()?.to_lowercase();
 
         let command = match &command_name[..] {
-            "ping" => Command::Ping(Ping {}),
+            "ping" => Command::Ping(Ping),
             "echo" => Command::Echo(Echo {
                 message: parse.next_string()?,
             }),
             "set" => Command::Set(Set::parse_frames(&mut parse)?),
-            "get" => Command::Get(Get {
-                key: parse.next_string()?,
-            }),
+            "get" => Command::Get(Get::parse_frames(&mut parse)?),
             "config" => Command::ConfigGet(ConfigGet::parse_frames(&mut parse)?),
             "keys" => Command::Keys(Keys::parse_frames(&mut parse)?),
             "info" => Command::Info(Info::parse_frames(&mut parse)?),
@@ -85,8 +86,9 @@ impl Command {
             "xrange" => Command::Xrange(Xrange::parse_frames(&mut parse)?),
             "xread" => Command::Xread(Xread::parse_frames(&mut parse)?),
             "incr" => Command::Incr(Incr::parse_frames(&mut parse)?),
-            "multi" => Command::Multi(Multi {}),
-            "exec" => Command::Exec(Exec {}),
+            "multi" => Command::Multi(Multi),
+            "exec" => Command::Exec(Exec),
+            "discard" => Command::Discard(Discard),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.
@@ -131,6 +133,7 @@ impl Executor for Command {
             Command::Incr(incr) => incr.exec(env).await,
             Command::Multi(multi) => todo!(),
             Command::Exec(exec) => todo!(),
+            Command::Discard(discard) => todo!(),
         }
     }
 }

@@ -1,1 +1,1 @@
-pub struct Ping {}
+pub struct Ping;

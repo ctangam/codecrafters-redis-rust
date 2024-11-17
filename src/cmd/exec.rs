@@ -1,1 +1,1 @@
-pub struct Exec {}
+pub struct Exec;
