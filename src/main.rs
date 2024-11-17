@@ -683,7 +683,10 @@ async fn main() {
                                             client.send(frame).await.unwrap();
                                         }
                                     } else {
-                                        client.send(Frame::Error("ERR EXEC without MULTI".into())).await.unwrap();
+                                        client
+                                            .send(Frame::Error("ERR EXEC without MULTI".into()))
+                                            .await
+                                            .unwrap();
                                     }
                                 }
                                 Ok(Command::Set(set)) => {

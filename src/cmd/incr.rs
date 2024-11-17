@@ -1,6 +1,5 @@
 use crate::{frame::Frame, parse::Parse};
 
-
 pub struct Incr {
     pub key: String,
 }

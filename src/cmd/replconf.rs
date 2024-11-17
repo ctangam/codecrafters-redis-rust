@@ -1,6 +1,5 @@
 use crate::parse::Parse;
 
-
 pub struct Replconf {
     pub port: Option<u32>,
     pub capa: Option<String>,

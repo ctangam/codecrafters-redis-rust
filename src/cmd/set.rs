@@ -3,11 +3,10 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 
 use crate::{
-    frame::{Frame},
+    frame::Frame,
     parse::{Parse, ParseError},
     Env,
 };
-
 
 pub struct Set {
     pub key: String,
