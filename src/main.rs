@@ -3,6 +3,7 @@
 use core::str;
 use std::{
     collections::HashMap,
+    ops::Add,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -636,6 +637,16 @@ async fn main() {
                                         Frame::Array(streams)
                                     };
                                     client.send(frame).await.unwrap();
+                                }
+                                Ok(Command::Incr(incr)) => {
+                                    use atoi::atoi;
+                                    let mut value = 1;
+                                    db.lock().unwrap().entry(incr.key).and_modify(|(v, _)| {
+                                        let num = atoi::<u64>(v).unwrap_or(0) + 1;
+                                        value = num;
+                                        *v = num.to_string().into()
+                                    }).or_insert(("1".into(), None));
+
                                 }
                                 Ok(Command::Set(set)) => {
                                     received = true;

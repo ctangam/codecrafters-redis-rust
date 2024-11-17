@@ -1,6 +1,7 @@
 use config_get::ConfigGet;
 use echo::Echo;
 use get::Get;
+use incr::Incr;
 use info::Info;
 use keys::Keys;
 use ping::Ping;
@@ -19,6 +20,7 @@ use crate::{frame::Frame, parse::Parse};
 pub mod config_get;
 pub mod echo;
 pub mod get;
+pub mod incr;
 pub mod info;
 pub mod keys;
 pub mod ping;
@@ -48,6 +50,7 @@ pub enum Command {
     Xadd(Xadd),
     Xrange(Xrange),
     Xread(Xread),
+    Incr(Incr),
 }
 
 impl Command {
@@ -74,6 +77,7 @@ impl Command {
             "xadd" => Command::Xadd(Xadd::parse_frames(&mut parse)?),
             "xrange" => Command::Xrange(Xrange::parse_frames(&mut parse)?),
             "xread" => Command::Xread(Xread::parse_frames(&mut parse)?),
+            "incr" => Command::Incr(Incr::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.
