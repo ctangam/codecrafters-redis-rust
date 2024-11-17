@@ -271,7 +271,7 @@ async fn main() {
     let mut role: &'static str = "master";
     let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
     let master_repl_offset = 0;
-    
+
     let env = Env::new();
 
     if let Some(dir) = args.dir.as_deref() {
@@ -677,9 +677,13 @@ async fn main() {
                                     client.send(Frame::Simple("OK".into())).await.unwrap();
                                 }
                                 Ok(Command::Exec(_)) => {
-                                    for cmd in &queue {
-                                        let frame = cmd.exec(env.clone()).await;
-                                        client.send(frame).await.unwrap();
+                                    if trans {
+                                        for cmd in &queue {
+                                            let frame = cmd.exec(env.clone()).await;
+                                            client.send(frame).await.unwrap();
+                                        }
+                                    } else {
+                                        client.send(Frame::Error("ERR EXEC without MULTI".into())).await.unwrap();
                                     }
                                 }
                                 Ok(Command::Set(set)) => {
