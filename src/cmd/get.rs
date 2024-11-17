@@ -11,10 +11,12 @@ impl Get {
         let value = env.db.lock().unwrap().get(&self.key).cloned();
         if let Some((value, expires)) = value {
             if let Some(expires) = expires {
-                if Instant::now() < expires {
-                    return Frame::Bulk(value.clone().into());
+                if Instant::now() > expires {
+                    return Frame::Null;
                 }
             }
+
+            return Frame::Bulk(value.clone().into());
         }
 
         Frame::Null
