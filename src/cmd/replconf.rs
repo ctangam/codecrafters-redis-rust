@@ -1,6 +1,5 @@
 use crate::parse::Parse;
 
-use super::{unknown::Unknown, Command};
 
 pub struct Replconf {
     pub port: Option<u32>,

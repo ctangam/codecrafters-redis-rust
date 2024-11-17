@@ -1,20 +1,13 @@
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use futures_util::SinkExt;
-use tokio::{
-    net::TcpStream,
-    sync::{broadcast, mpsc},
-};
-use tokio_util::codec::Framed;
 
 use crate::{
-    frame::{Frame, FrameCodec},
+    frame::{Frame},
     parse::{Parse, ParseError},
-    Env, DB,
+    Env,
 };
 
-use super::Executor;
 
 pub struct Set {
     pub key: String,

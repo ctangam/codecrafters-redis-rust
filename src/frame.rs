@@ -1,9 +1,8 @@
 use core::str;
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
-use crate::cmd::Command;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Frame {

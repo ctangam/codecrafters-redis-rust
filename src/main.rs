@@ -3,7 +3,6 @@
 use core::str;
 use std::{
     collections::HashMap,
-    ops::Add,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
