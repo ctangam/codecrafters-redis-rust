@@ -1,9 +1,11 @@
 use config_get::ConfigGet;
 use echo::Echo;
+use exec::Exec;
 use get::Get;
 use incr::Incr;
 use info::Info;
 use keys::Keys;
+use multi::Multi;
 use ping::Ping;
 use psync::Psync;
 use replconf::Replconf;
@@ -15,14 +17,16 @@ use xadd::Xadd;
 use xrange::Xrange;
 use xread::Xread;
 
-use crate::{frame::Frame, parse::Parse};
+use crate::{frame::Frame, parse::Parse, Env};
 
 pub mod config_get;
 pub mod echo;
+pub mod exec;
 pub mod get;
 pub mod incr;
 pub mod info;
 pub mod keys;
+pub mod multi;
 pub mod ping;
 pub mod psync;
 pub mod replconf;
@@ -51,6 +55,8 @@ pub enum Command {
     Xrange(Xrange),
     Xread(Xread),
     Incr(Incr),
+    Multi(Multi),
+    Exec(Exec),
 }
 
 impl Command {
@@ -78,6 +84,8 @@ impl Command {
             "xrange" => Command::Xrange(Xrange::parse_frames(&mut parse)?),
             "xread" => Command::Xread(Xread::parse_frames(&mut parse)?),
             "incr" => Command::Incr(Incr::parse_frames(&mut parse)?),
+            "multi" => Command::Multi(Multi {}),
+            "exec" => Command::Exec(Exec {}),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.
@@ -92,5 +100,34 @@ impl Command {
         parse.finish()?;
 
         Ok(command)
+    }
+}
+
+pub trait Executor {
+    async fn exec(&self, env: Env) -> Frame;
+}
+
+impl Executor for Command {
+    async fn exec(&self, env: Env) -> Frame {
+        match self {
+            Command::Ping(ping) => todo!(),
+            Command::Echo(echo) => todo!(),
+            Command::Set(set) => set.exec(env).await,
+            Command::Get(get) => todo!(),
+            Command::Unknown(unknown) => todo!(),
+            Command::ConfigGet(config_get) => todo!(),
+            Command::Keys(keys) => todo!(),
+            Command::Info(info) => todo!(),
+            Command::Replconf(replconf) => todo!(),
+            Command::Psync(psync) => todo!(),
+            Command::Wait(wait) => todo!(),
+            Command::Rtype(rtype) => todo!(),
+            Command::Xadd(xadd) => todo!(),
+            Command::Xrange(xrange) => todo!(),
+            Command::Xread(xread) => todo!(),
+            Command::Incr(incr) => incr.exec(env).await,
+            Command::Multi(multi) => todo!(),
+            Command::Exec(exec) => todo!(),
+        }
     }
 }

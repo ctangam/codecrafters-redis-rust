@@ -12,7 +12,7 @@ use std::{
 
 use bytes::{Buf, Bytes, BytesMut};
 use clap::Parser;
-use cmd::Command;
+use cmd::{Command, Executor};
 use frame::{Frame, FrameCodec};
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
@@ -29,8 +29,6 @@ mod parse;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
-pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
-pub type STREAMS = Arc<Mutex<HashMap<String, Vec<((u128, u64), Vec<(String, Bytes)>)>>>>;
 
 async fn parse_dbfile(mut buf: BytesMut, db: DB) {
     println!("{:?}", String::from_utf8_lossy(&buf[..]));
@@ -239,23 +237,50 @@ struct Args {
     replicaof: Option<String>,
 }
 
+pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
+pub type STREAMS = Arc<Mutex<HashMap<String, Vec<((u128, u64), Vec<(String, Bytes)>)>>>>;
+
+#[derive(Clone)]
+pub struct Env {
+    pub db: DB,
+    pub config: Arc<Mutex<HashMap<String, String>>>,
+    pub streams: STREAMS,
+    pub tx: broadcast::Sender<(Frame, Option<mpsc::Sender<u64>>)>,
+    pub streams_tx: broadcast::Sender<(String, Option<Vec<((u128, u64), Vec<(String, Bytes)>)>>)>,
+}
+
+impl Env {
+    pub fn new() -> Self {
+        let db: DB = Arc::new(Mutex::new(HashMap::new()));
+        let config = Arc::new(Mutex::new(HashMap::new()));
+        let streams: STREAMS = Arc::new(Mutex::new(HashMap::new()));
+        let (tx, _) = broadcast::channel(32);
+        let (streams_tx, _) = broadcast::channel(32);
+        Self {
+            db,
+            config,
+            streams,
+            tx,
+            streams_tx,
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
     let mut role: &'static str = "master";
     let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
     let master_repl_offset = 0;
-    let db: DB = Arc::new(Mutex::new(HashMap::new()));
-    let config = Arc::new(Mutex::new(HashMap::new()));
-    let streams: STREAMS = Arc::new(Mutex::new(HashMap::new()));
+    let env = Env::new();
 
     if let Some(dir) = args.dir.as_deref() {
-        config
+        env.config
             .lock()
             .unwrap()
             .insert("dir".to_string(), dir.to_string_lossy().to_string());
         if let Some(dbfilename) = args.dbfilename.as_deref() {
-            config
+            env.config
                 .lock()
                 .unwrap()
                 .insert("dbfilename".to_string(), dbfilename.to_string());
@@ -266,7 +291,7 @@ async fn main() {
                 let mut buf = Vec::new();
                 dbfile.read_to_end(&mut buf).await.unwrap();
                 let buf = BytesMut::from(&buf[..]);
-                parse_dbfile(buf, db.clone()).await;
+                parse_dbfile(buf, env.db.clone()).await;
             }
         }
     }
@@ -335,11 +360,10 @@ async fn main() {
 
         let (_, rdbfile) = master.next().await.unwrap().unwrap();
         if let Frame::File(content) = rdbfile {
-            parse_dbfile(BytesMut::from(content), db.clone()).await;
-            println!("replic after parse db: {db:?}");
+            parse_dbfile(BytesMut::from(content), env.db.clone()).await;
         }
 
-        let db = db.clone();
+        let db = env.db.clone();
         tokio::spawn(async move {
             let mut offset = 0usize;
             loop {
@@ -380,23 +404,24 @@ async fn main() {
         });
     }
 
-    let (tx, _) = broadcast::channel(32);
-    let (streams_tx, _) = broadcast::channel(32);
     let listener = TcpListener::bind(address).await.unwrap();
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
                 println!("accepted new connection");
 
-                let db = db.clone();
-                let streams = streams.clone();
-                let config = config.clone();
-                let tx = tx.clone();
-                let streams_tx = streams_tx.clone();
+                let db = env.db.clone();
+                let streams = env.streams.clone();
+                let config = env.config.clone();
+                let tx = env.tx.clone();
+                let streams_tx = env.streams_tx.clone();
+                let env = env.clone();
 
                 tokio::spawn(async move {
                     let mut client = Framed::new(stream, FrameCodec);
                     let mut received = false;
+                    let mut trans = false;
+                    let mut queue: Vec<Command> = Vec::new();
                     loop {
                         if let Some(Ok((_, frame))) = client.next().await {
                             match Command::from(frame.clone()) {
@@ -449,7 +474,7 @@ async fn main() {
                                                 .await
                                                 .unwrap();
 
-                                            streams_tx.send((
+                                            let _ = streams_tx.send((
                                                 xadd.stream_key,
                                                 Some(vec![(new_id, xadd.pairs)]),
                                             ));
@@ -639,34 +664,34 @@ async fn main() {
                                     client.send(frame).await.unwrap();
                                 }
                                 Ok(Command::Incr(incr)) => {
-                                    use atoi::atoi;
-                                    let mut frame = Frame::Integer(1);
-                                    db.lock().unwrap().entry(incr.key).and_modify(|(v, _)| {
-                                        if let Some(mut num) = atoi::<u64>(v) {
-                                            num += 1;
-                                            frame = Frame::Integer(num);
-                                            *v = num.to_string().into()
-                                        } else {
-                                            frame = Frame::Error("ERR value is not an integer or out of range".into());
-                                        }
-                                        
-                                    }).or_insert(("1".into(), None));
-                                    client.send(frame).await.unwrap();
+                                    if trans {
+                                        queue.push(Command::Incr(incr));
+                                        client.send(Frame::Simple("QUEUED".into())).await.unwrap();
+                                    } else {
+                                        let frame = incr.exec(env.clone()).await;
+                                        client.send(frame).await.unwrap();
+                                    }
+                                }
+                                Ok(Command::Multi(_)) => {
+                                    trans = true;
+                                    client.send(Frame::Simple("OK".into())).await.unwrap();
+                                }
+                                Ok(Command::Exec(_)) => {
+                                    for cmd in &queue {
+                                        let frame = cmd.exec(env.clone()).await;
+                                        client.send(frame).await.unwrap();
+                                    }
                                 }
                                 Ok(Command::Set(set)) => {
                                     received = true;
-                                    let expires = set
-                                        .expire
-                                        .and_then(|expire| Instant::now().checked_add(expire));
-                                    {
-                                        let mut db = db.lock().unwrap();
-                                        db.insert(set.key, (set.value, expires));
-                                        drop(db);
+                                    let _ = env.tx.send((frame, None));
+                                    if trans {
+                                        queue.push(Command::Set(set));
+                                        client.send(Frame::Simple("QUEUED".into())).await.unwrap();
+                                    } else {
+                                        let frame = set.exec(env.clone()).await;
+                                        client.send(frame).await.unwrap();
                                     }
-
-                                    client.send(Frame::Simple("OK".to_string())).await.unwrap();
-
-                                    let _ = tx.send((frame, None));
                                 }
                                 Ok(Command::Get(get)) => {
                                     let value = {
@@ -694,10 +719,8 @@ async fn main() {
                                 }
                                 Ok(Command::ConfigGet(cmd)) => {
                                     let key = cmd.key;
-                                    let value = {
-                                        let config = config.lock().unwrap();
-                                        config.get(&key).cloned()
-                                    };
+                                    let value = config.lock().unwrap().get(&key).cloned();
+
                                     if value.is_some() {
                                         let frame = Frame::Array(vec![
                                             Frame::Bulk(key.into()),
@@ -732,7 +755,6 @@ async fn main() {
                                         .unwrap();
                                     }
                                 }
-
                                 Ok(Command::Wait(_)) => {
                                     println!("receiver: {}", tx.receiver_count());
                                     if !received {
@@ -844,12 +866,6 @@ async fn main() {
             }
         }
     }
-}
-
-#[test]
-fn test_parse_id() {
-    let now = SystemTime::now();
-    println!("{}", now.duration_since(UNIX_EPOCH).unwrap().as_millis());
 }
 
 fn parse_id(new_id: &str, last_id: Option<(u128, u64)>) -> Result<(u128, u64)> {

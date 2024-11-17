@@ -1,4 +1,6 @@
-use crate::parse::Parse;
+use crate::{frame::Frame, parse::Parse};
+
+use super::Executor;
 
 pub struct Incr {
     pub key: String,
@@ -8,5 +10,27 @@ impl Incr {
     pub fn parse_frames(parse: &mut Parse) -> crate::Result<Self> {
         let key = parse.next_string()?;
         Ok(Self { key })
+    }
+}
+
+impl Executor for Incr {
+    async fn exec(&self, env: crate::Env) -> crate::frame::Frame {
+        use atoi::atoi;
+        let mut frame = Frame::Integer(1);
+        env.db
+            .lock()
+            .unwrap()
+            .entry(self.key.clone())
+            .and_modify(|(v, _)| {
+                if let Some(mut num) = atoi::<u64>(v) {
+                    num += 1;
+                    frame = Frame::Integer(num);
+                    *v = num.to_string().into()
+                } else {
+                    frame = Frame::Error("ERR value is not an integer or out of range".into());
+                }
+            })
+            .or_insert(("1".into(), None));
+        frame
     }
 }

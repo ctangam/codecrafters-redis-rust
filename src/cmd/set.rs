@@ -1,8 +1,20 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
+use futures_util::SinkExt;
+use tokio::{
+    net::TcpStream,
+    sync::{broadcast, mpsc},
+};
+use tokio_util::codec::Framed;
 
-use crate::parse::{Parse, ParseError};
+use crate::{
+    frame::{Frame, FrameCodec},
+    parse::{Parse, ParseError},
+    Env, DB,
+};
+
+use super::Executor;
 
 pub struct Set {
     pub key: String,
@@ -39,5 +51,20 @@ impl Set {
         };
 
         Ok(Set { key, value, expire })
+    }
+}
+
+impl Executor for Set {
+    async fn exec(&self, env: Env) -> Frame {
+        let expires = self
+            .expire
+            .and_then(|expire| Instant::now().checked_add(expire));
+        {
+            let mut db = env.db.lock().unwrap();
+            db.insert(self.key.clone(), (self.value.clone(), expires));
+            drop(db);
+        }
+
+        Frame::Simple("OK".to_string())
     }
 }
