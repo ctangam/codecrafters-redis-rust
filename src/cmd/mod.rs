@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use config_get::ConfigGet;
 use echo::Echo;
 use exec::Exec;
@@ -103,10 +104,12 @@ impl Command {
     }
 }
 
+#[async_trait]
 pub trait Executor {
     async fn exec(&self, env: Env) -> Frame;
 }
 
+#[async_trait]
 impl Executor for Command {
     async fn exec(&self, env: Env) -> Frame {
         match self {

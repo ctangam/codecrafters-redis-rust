@@ -11,10 +11,8 @@ impl Incr {
         let key = parse.next_string()?;
         Ok(Self { key })
     }
-}
 
-impl Executor for Incr {
-    async fn exec(&self, env: crate::Env) -> crate::frame::Frame {
+    pub async fn exec(&self, env: crate::Env) -> crate::frame::Frame {
         use atoi::atoi;
         let mut frame = Frame::Integer(1);
         env.db

@@ -52,10 +52,8 @@ impl Set {
 
         Ok(Set { key, value, expire })
     }
-}
 
-impl Executor for Set {
-    async fn exec(&self, env: Env) -> Frame {
+    pub async fn exec(&self, env: Env) -> Frame {
         let expires = self
             .expire
             .and_then(|expire| Instant::now().checked_add(expire));
