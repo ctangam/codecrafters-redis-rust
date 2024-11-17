@@ -707,27 +707,12 @@ async fn main() {
                                     }
                                 }
                                 Ok(Command::Get(get)) => {
-                                    let value = {
-                                        let db = db.lock().unwrap();
-                                        println!("{db:?}");
-                                        let value = db.get(&get.key).cloned();
-                                        drop(db);
-                                        value
-                                    };
-                                    if let Some((value, expires)) = value {
-                                        if let Some(expires) = expires {
-                                            let now = Instant::now();
-                                            if now > expires {
-                                                client.send(Frame::Null).await.unwrap();
-                                                continue;
-                                            }
-                                        }
-                                        client
-                                            .send(Frame::Bulk(value.clone().into()))
-                                            .await
-                                            .unwrap();
+                                    if trans {
+                                        queue.push(Command::Get(get));
+                                        client.send(Frame::Simple("QUEUED".into())).await.unwrap();
                                     } else {
-                                        client.send(Frame::Null).await.unwrap();
+                                        let frame = get.exec(env.clone()).await;
+                                        client.send(frame).await.unwrap();
                                     }
                                 }
                                 Ok(Command::ConfigGet(cmd)) => {
