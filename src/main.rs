@@ -646,7 +646,7 @@ async fn main() {
                                         value = num;
                                         *v = num.to_string().into()
                                     }).or_insert(("1".into(), None));
-
+                                    client.send(Frame::Integer(value)).await.unwrap();
                                 }
                                 Ok(Command::Set(set)) => {
                                     received = true;
