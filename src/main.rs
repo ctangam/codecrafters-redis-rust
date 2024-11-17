@@ -640,13 +640,18 @@ async fn main() {
                                 }
                                 Ok(Command::Incr(incr)) => {
                                     use atoi::atoi;
-                                    let mut value = 1;
+                                    let mut frame = Frame::Integer(1);
                                     db.lock().unwrap().entry(incr.key).and_modify(|(v, _)| {
-                                        let num = atoi::<u64>(v).unwrap_or(0) + 1;
-                                        value = num;
-                                        *v = num.to_string().into()
+                                        if let Some(mut num) = atoi::<u64>(v) {
+                                            num += 1;
+                                            frame = Frame::Integer(num);
+                                            *v = num.to_string().into()
+                                        } else {
+                                            frame = Frame::Error("ERR value is not an integer or out of range".into());
+                                        }
+                                        
                                     }).or_insert(("1".into(), None));
-                                    client.send(Frame::Integer(value)).await.unwrap();
+                                    client.send(frame).await.unwrap();
                                 }
                                 Ok(Command::Set(set)) => {
                                     received = true;
