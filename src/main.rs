@@ -1014,7 +1014,7 @@ async fn main() {
                                 _ => unreachable!(),
                             }
                         }
-                    }.await
+                    }
                 });
             }
             Err(e) => {
