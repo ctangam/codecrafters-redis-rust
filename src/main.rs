@@ -878,7 +878,7 @@ async fn main() {
                                         list.len()
                                     };
                                     client.send(Frame::Integer(size as u64)).await.unwrap();
-                                }
+                                },
 
                                 _ => unreachable!(),
                             }
