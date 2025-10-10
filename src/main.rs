@@ -2,11 +2,7 @@
 
 use core::str;
 use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-    vec,
+    cmp::min, collections::HashMap, path::PathBuf, sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}, vec
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -18,11 +14,11 @@ use tokio::{
     fs::File,
     io::AsyncReadExt,
     net::{TcpListener, TcpStream},
-    sync::{broadcast, mpsc},
+    sync::{broadcast, mpsc, oneshot}, time::Instant,
 };
 use tokio_util::codec::Framed;
 
-use crate::cmd::rpush::Rpush;
+use crate::cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush};
 
 mod cmd;
 mod frame;
@@ -241,6 +237,7 @@ struct Args {
 pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
 pub type STREAMS = Arc<Mutex<HashMap<String, Vec<((u128, u64), Vec<(String, Bytes)>)>>>>;
 pub type LISTS = Arc<Mutex<HashMap<String, Vec<String>>>>;
+pub type WAIT_LISTS = Arc<Mutex<HashMap<String, Vec<oneshot::Sender<String>>>>>;
 
 #[derive(Clone)]
 pub struct Env {
@@ -250,6 +247,7 @@ pub struct Env {
     pub tx: broadcast::Sender<(Frame, Option<mpsc::Sender<u64>>)>,
     pub streams_tx: broadcast::Sender<(String, Option<Vec<((u128, u64), Vec<(String, Bytes)>)>>)>,
     pub lists: LISTS,
+    pub wait_lists: WAIT_LISTS,
 }
 
 impl Env {
@@ -260,6 +258,7 @@ impl Env {
         let (tx, _) = broadcast::channel(32);
         let (streams_tx, _) = broadcast::channel(32);
         let lists: LISTS = Arc::new(Mutex::new(HashMap::new()));
+        let wait_lists: WAIT_LISTS = Arc::new(Mutex::new(HashMap::new()));
         Self {
             db,
             config,
@@ -267,6 +266,7 @@ impl Env {
             tx,
             streams_tx,
             lists,
+            wait_lists,
         }
     }
 }
@@ -870,14 +870,139 @@ async fn main() {
                                 },
                                 Ok(Command::Rpush(rpush)) => {
                                     dbg!(&rpush);
-                                    let Rpush{list_key, element} = rpush;
+                                    let Rpush{list_key, mut elements} = rpush;
                                     let size = {
                                         let mut lists = env.lists.lock().unwrap();
-                                        let list = lists.entry(list_key).or_default();
-                                        list.push(element);
+                                        let list = lists.entry(list_key.clone()).or_default();
+                                        list.append(&mut elements);
                                         list.len()
                                     };
+                                    env.wait_lists.lock().unwrap().get_mut(&list_key).map(|wait_list| {
+                                        if !wait_list.is_empty() {
+                                            let element = env.lists.lock().unwrap().get_mut(&list_key).and_then(|list| {
+                                                Some(list.remove(0))
+                                            });
+                                            wait_list.remove(0).send(element.unwrap()).ok();
+                                        }
+                                    });
                                     client.send(Frame::Integer(size as u64)).await.unwrap();
+                                },
+                                Ok(Command::Lrange(lrange)) => {
+                                    dbg!(&lrange);
+                                    let Lrange{list_key, start, stop} = lrange;
+                                    
+                                    let elements = {
+                                        let lists = env.lists.lock().unwrap();
+                                        if let Some(list) = lists.get(&list_key) {
+                                            let start = if (start + list.len() as i64) < 0 {
+                                                0
+                                            } else if start < 0 {
+                                                start + list.len() as i64
+                                            } else {
+                                                start
+                                            } as usize;
+                                            let stop = if (stop + list.len() as i64) < 0 {
+                                                0
+                                            } else if stop < 0 {
+                                                stop + list.len() as i64
+                                            } else {
+                                                stop
+                                            } as usize;
+                                            let stop = min(stop, list.len() - 1);
+                                            if start > stop || start >= list.len() {
+                                                vec![]
+                                            } else {
+                                                list[start..=stop].iter().map(|s| Frame::Bulk(s.clone().into())).collect()
+                                            }
+                                        } else {
+                                            vec![]
+                                        }
+                                    };
+                                    client.send(Frame::Array(elements)).await.unwrap();
+                                },
+                                Ok(Command::Lpush(lpush)) => {
+                                    dbg!(&lpush);
+                                    let Lpush{list_key, mut elements} = lpush;
+                                    elements.reverse();
+                                    let size = {
+                                        let mut lists = env.lists.lock().unwrap();
+                                        let list = lists.entry(list_key.clone()).or_default();
+                                        list.append(&mut elements);
+                                        list.len()
+                                    };
+                                    env.wait_lists.lock().unwrap().get_mut(&list_key).map(|wait_list| {
+                                        if !wait_list.is_empty() {
+                                            let element = env.lists.lock().unwrap().get_mut(&list_key).and_then(|list| {
+                                                Some(list.remove(0))
+                                            });
+                                            wait_list.remove(0).send(element.unwrap()).ok();
+                                        }
+                                    });
+                                    client.send(Frame::Integer(size as u64)).await.unwrap();
+                                },
+                                Ok(Command::Llen(llen)) => {
+                                    dbg!(&llen);
+                                    let Llen{list_key} = llen;
+                                    let size = {
+                                        let lists = env.lists.lock().unwrap();
+                                        if let Some(list) = lists.get(&list_key) {
+                                            list.len()
+                                        } else {
+                                            0
+                                        }
+                                    };
+                                    client.send(Frame::Integer(size as u64)).await.unwrap();
+                                },
+                                Ok(Command::Lpop(lpop)) => {
+                                    dbg!(&lpop);
+                                    let Lpop{list_key, count} = lpop;
+                                    let elements = {
+                                        let mut lists = env.lists.lock().unwrap();
+                                        if let Some(list) = lists.get_mut(&list_key) {
+                                            let count = count.unwrap_or(1);
+                                            let count = min(count, list.len());
+                                            list.drain(0..count).map(|s| Frame::Bulk(s.into())).collect()
+                                        } else {
+                                            vec![]
+                                        }
+                                    };
+                                    client.send(Frame::Array(elements)).await.unwrap();
+                                },
+                                Ok(Command::Blpop(blpop)) => {
+                                    dbg!(&blpop);
+                                    let Blpop{list_key, timeout} = blpop;
+                                    let mut elements = vec![];
+                                    // Scope the MutexGuard so it is dropped before any await
+                                    let mut found = false;
+                                    {
+                                        let mut lists = env.lists.lock().unwrap();
+                                        if let Some(list) = lists.get_mut(&list_key) {
+                                            if !list.is_empty() {
+                                                let element = list.remove(0);
+                                                elements = vec![Frame::Bulk(list_key.clone().into()), Frame::Bulk(element.into())];
+                                                found = true;
+                                            }
+                                        }
+                                    }
+                                    if !found {
+                                        let (tx, rx) = oneshot::channel();
+                                        {
+                                            let mut wait_lists = env.wait_lists.lock().unwrap();
+                                            wait_lists.entry(list_key.clone()).or_default().push(tx);
+                                        }
+                                        if timeout != 0 {
+                                            tokio::select! {
+                                                _ = tokio::time::sleep(Duration::from_secs(timeout)) => {},
+                                                Ok(element) = rx => {
+                                                    elements = vec![Frame::Bulk(list_key.clone().into()), Frame::Bulk(element.into())];
+                                                }
+                                            }
+                                        } else {
+                                            let element = rx.await.unwrap();
+                                            elements = vec![Frame::Bulk(list_key.clone().into()), Frame::Bulk(element.into())];
+                                        }
+                                    }
+                                    client.send(if elements.is_empty() { Frame::Null } else { Frame::Array(elements) }).await.unwrap();
                                 },
 
                                 _ => unreachable!(),
