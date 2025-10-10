@@ -19,7 +19,7 @@ use xadd::Xadd;
 use xrange::Xrange;
 use xread::Xread;
 
-use crate::{frame::Frame, parse::Parse, Env};
+use crate::{cmd::rpush::Rpush, frame::Frame, parse::Parse, Env};
 
 pub mod config_get;
 pub mod echo;
@@ -40,6 +40,7 @@ pub mod xadd;
 pub mod xrange;
 pub mod xread;
 pub mod discard;
+pub mod rpush;
 
 pub enum Command {
     Ping(Ping),
@@ -61,6 +62,7 @@ pub enum Command {
     Multi(Multi),
     Exec(Exec),
     Discard(Discard),
+    Rpush(Rpush)
 }
 
 impl Command {
@@ -89,6 +91,7 @@ impl Command {
             "multi" => Command::Multi(Multi),
             "exec" => Command::Exec(Exec),
             "discard" => Command::Discard(Discard),
+            "rpush" => Command::Rpush(Rpush::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.
@@ -134,6 +137,7 @@ impl Executor for Command {
             Command::Multi(multi) => todo!(),
             Command::Exec(exec) => todo!(),
             Command::Discard(discard) => todo!(),
+            Command::Rpush(rpush) => todo!(),
         }
     }
 }

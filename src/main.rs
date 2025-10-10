@@ -22,6 +22,8 @@ use tokio::{
 };
 use tokio_util::codec::Framed;
 
+use crate::cmd::rpush::Rpush;
+
 mod cmd;
 mod frame;
 mod parse;
@@ -238,6 +240,7 @@ struct Args {
 
 pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
 pub type STREAMS = Arc<Mutex<HashMap<String, Vec<((u128, u64), Vec<(String, Bytes)>)>>>>;
+pub type LISTS = Arc<Mutex<HashMap<String, Vec<String>>>>;
 
 #[derive(Clone)]
 pub struct Env {
@@ -246,6 +249,7 @@ pub struct Env {
     pub streams: STREAMS,
     pub tx: broadcast::Sender<(Frame, Option<mpsc::Sender<u64>>)>,
     pub streams_tx: broadcast::Sender<(String, Option<Vec<((u128, u64), Vec<(String, Bytes)>)>>)>,
+    pub lists: LISTS,
 }
 
 impl Env {
@@ -255,12 +259,14 @@ impl Env {
         let streams: STREAMS = Arc::new(Mutex::new(HashMap::new()));
         let (tx, _) = broadcast::channel(32);
         let (streams_tx, _) = broadcast::channel(32);
+        let lists: LISTS = Arc::new(Mutex::new(HashMap::new()));
         Self {
             db,
             config,
             streams,
             tx,
             streams_tx,
+            lists,
         }
     }
 }
@@ -861,12 +867,23 @@ async fn main() {
                                             }
                                         }
                                     });
+                                },
+                                Ok(Command::Rpush(rpush)) => {
+                                    dbg!(&rpush);
+                                    let Rpush{list_key, element} = rpush;
+                                    let size = {
+                                        let mut lists = env.lists.lock().unwrap();
+                                        let list = lists.entry(list_key).or_default();
+                                        list.push(element);
+                                        list.len()
+                                    };
+                                    client.send(Frame::Integer(size as u64)).await.unwrap();
                                 }
 
                                 _ => unreachable!(),
                             }
                         }
-                    }
+                    }.await
                 });
             }
             Err(e) => {
