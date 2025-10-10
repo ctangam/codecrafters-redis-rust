@@ -19,7 +19,7 @@ use xadd::Xadd;
 use xrange::Xrange;
 use xread::Xread;
 
-use crate::{cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush}, frame::Frame, parse::Parse, Env};
+use crate::{cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, subscribe::Subscribe}, frame::Frame, parse::Parse, Env};
 
 pub mod config_get;
 pub mod echo;
@@ -46,6 +46,7 @@ pub mod lpush;
 pub mod llen;
 pub mod lpop;
 pub mod blpop;
+pub mod subscribe;
 
 pub enum Command {
     Ping(Ping),
@@ -73,6 +74,7 @@ pub enum Command {
     Llen(Llen),
     Lpop(Lpop),
     Blpop(Blpop),
+    Subscribe(Subscribe),
 }
 
 impl Command {
@@ -106,6 +108,8 @@ impl Command {
             "lpush" => Command::Lpush(Lpush::parse_frames(&mut parse)?),
             "llen" => Command::Llen(Llen::parse_frames(&mut parse)?),
             "lpop" => Command::Lpop(Lpop::parse_frames(&mut parse)?),
+            "blpop" => Command::Blpop(Blpop::parse_frames(&mut parse)?),
+            "subscribe" => Command::Subscribe(Subscribe::parse_frames(&mut parse)?),    
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.

@@ -2,7 +2,7 @@
 
 use core::str;
 use std::{
-    cmp::min, collections::HashMap, path::PathBuf, sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}, vec
+    cmp::min, collections::{HashMap, HashSet}, path::PathBuf, sync::{Arc, Mutex}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}, vec
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -14,7 +14,7 @@ use tokio::{
     fs::File,
     io::AsyncReadExt,
     net::{TcpListener, TcpStream},
-    sync::{broadcast, mpsc, oneshot}, time::Instant,
+    sync::{broadcast, mpsc, oneshot},
 };
 use tokio_util::codec::Framed;
 
@@ -428,6 +428,7 @@ async fn main() {
                     let mut received = false;
                     let mut trans = false;
                     let mut queue: Vec<Command> = Vec::new();
+                    let mut channels = HashSet::new();
                     loop {
                         if let Some(Ok((_, frame))) = client.next().await {
                             match Command::from(frame.clone()) {
@@ -870,21 +871,19 @@ async fn main() {
                                 },
                                 Ok(Command::Rpush(rpush)) => {
                                     dbg!(&rpush);
-                                    let Rpush{list_key, mut elements} = rpush;
+                                    let Rpush{list_key, elements} = rpush;
                                     let size = {
                                         let mut lists = env.lists.lock().unwrap();
                                         let list = lists.entry(list_key.clone()).or_default();
-                                        list.append(&mut elements);
+                                        list.extend(elements);
                                         list.len()
                                     };
-                                    env.wait_lists.lock().unwrap().get_mut(&list_key).map(|wait_list| {
+                                    if let Some(wait_list) = env.wait_lists.lock().unwrap().get_mut(&list_key) {
                                         if !wait_list.is_empty() {
-                                            let element = env.lists.lock().unwrap().get_mut(&list_key).and_then(|list| {
-                                                Some(list.remove(0))
-                                            });
+                                            let element = env.lists.lock().unwrap().get_mut(&list_key).map(|list| list.remove(0));
                                             wait_list.remove(0).send(element.unwrap()).ok();
                                         }
-                                    });
+                                    }
                                     client.send(Frame::Integer(size as u64)).await.unwrap();
                                 },
                                 Ok(Command::Lrange(lrange)) => {
@@ -1003,6 +1002,13 @@ async fn main() {
                                         }
                                     }
                                     client.send(if elements.is_empty() { Frame::Null } else { Frame::Array(elements) }).await.unwrap();
+                                },
+                                Ok(Command::Subscribe(subscribe)) => {
+                                    dbg!(&subscribe);
+                                    channels.extend(subscribe.channels);
+                                    let frames = vec![Frame::Bulk("subscribe".into())];
+                                    let frames = frames.into_iter().chain(channels.iter().map(|channel| Frame::Bulk(channel.clone().into()))).chain(vec![Frame::Integer(channels.len() as u64)].into_iter()).collect();
+                                    client.send(Frame::Array(frames)).await.unwrap();
                                 },
 
                                 _ => unreachable!(),
