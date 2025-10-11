@@ -8,6 +8,7 @@ pub enum Frame {
     Simple(String),
     Error(String),
     Integer(u64),
+    Double(f64),
     Bulk(Bytes),
     Null,
     Array(Vec<Frame>),
@@ -70,6 +71,25 @@ impl Decoder for FrameCodec {
                     i + 2,
                     Frame::Integer(
                         u64::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap(),
+                    ),
+                )
+            }
+            b',' => {
+                let mut buffer = Vec::new();
+                let mut i = 1;
+                loop {
+                    if src[i] == b'\r' && src[i + 1] == b'\n' {
+                        break;
+                    }
+                    buffer.push(src[i]);
+                    i += 1;
+                }
+
+                src.advance(i + 2);
+                (
+                    i + 2,
+                    Frame::Double(
+                        f64::from_be_bytes(buffer.try_into().unwrap())
                     ),
                 )
             }
@@ -156,6 +176,11 @@ impl Encoder<Frame> for FrameCodec {
             Frame::Integer(num) => {
                 dst.extend_from_slice(b":");
                 dst.extend_from_slice(num.to_string().as_bytes());
+                dst.extend_from_slice(b"\r\n");
+            }
+            Frame::Double(num) => {
+                dst.extend_from_slice(b",");
+                dst.extend_from_slice(num.to_be_bytes().as_ref());
                 dst.extend_from_slice(b"\r\n");
             }
             Frame::Bulk(msg) => {

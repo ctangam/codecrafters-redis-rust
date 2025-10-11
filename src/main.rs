@@ -2,7 +2,7 @@
 
 use core::str;
 use std::{
-    cmp::min, collections::{HashMap, HashSet}, path::PathBuf, sync::{Arc, Mutex}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}, vec
+    cmp::min, collections::{BTreeSet, HashMap, HashSet}, path::PathBuf, sync::{Arc, Mutex}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}, vec
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -18,7 +18,7 @@ use tokio::{
 };
 use tokio_util::codec::Framed;
 
-use crate::cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush};
+use crate::cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, zadd::Zadd};
 
 mod cmd;
 mod frame;
@@ -248,6 +248,7 @@ pub struct Env {
     pub streams_tx: broadcast::Sender<(String, Option<Vec<((u128, u64), Vec<(String, Bytes)>)>>)>,
     pub lists: LISTS,
     pub wait_lists: WAIT_LISTS,
+    pub zsets: Arc<Mutex<HashMap<String, BTreeSet<(f64, String)>>>>,
 }
 
 impl Env {
@@ -259,6 +260,7 @@ impl Env {
         let (streams_tx, _) = broadcast::channel(32);
         let lists: LISTS = Arc::new(Mutex::new(HashMap::new()));
         let wait_lists: WAIT_LISTS = Arc::new(Mutex::new(HashMap::new()));
+        let zsets = Arc::new(Mutex::new(HashMap::new()));
         Self {
             db,
             config,
@@ -267,6 +269,7 @@ impl Env {
             streams_tx,
             lists,
             wait_lists,
+            zsets,
         }
     }
 }
@@ -1010,11 +1013,24 @@ async fn main() {
                                     let frames = frames.into_iter().chain(channels.iter().map(|channel| Frame::Bulk(channel.clone().into()))).chain(vec![Frame::Integer(channels.len() as u64)].into_iter()).collect();
                                     client.send(Frame::Array(frames)).await.unwrap();
                                 },
+                                Ok(Command::Zadd(zadd)) => {
+                                    dbg!(&zadd);
+                                    let Zadd{key, score, value} = zadd;
+                                    let added = {
+                                        let mut zsets = env.zsets.lock().unwrap();
+                                        let zset = zsets.entry(key.clone()).or_default();
+                                        let mut added = 1;
+                                        
+                                        
+                                        added
+                                    };
+                                    client.send(Frame::Integer(added as u64)).await.unwrap();
+                                },
 
                                 _ => unreachable!(),
                             }
                         }
-                    }
+                    }.await
                 });
             }
             Err(e) => {

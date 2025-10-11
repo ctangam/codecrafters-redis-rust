@@ -19,7 +19,7 @@ use xadd::Xadd;
 use xrange::Xrange;
 use xread::Xread;
 
-use crate::{cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, subscribe::Subscribe}, frame::Frame, parse::Parse, Env};
+use crate::{cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, subscribe::Subscribe, zadd::Zadd}, frame::Frame, parse::Parse, Env};
 
 pub mod config_get;
 pub mod echo;
@@ -47,6 +47,7 @@ pub mod llen;
 pub mod lpop;
 pub mod blpop;
 pub mod subscribe;
+pub mod zadd;
 
 pub enum Command {
     Ping(Ping),
@@ -75,6 +76,7 @@ pub enum Command {
     Lpop(Lpop),
     Blpop(Blpop),
     Subscribe(Subscribe),
+    Zadd(Zadd),
 }
 
 impl Command {
@@ -109,7 +111,8 @@ impl Command {
             "llen" => Command::Llen(Llen::parse_frames(&mut parse)?),
             "lpop" => Command::Lpop(Lpop::parse_frames(&mut parse)?),
             "blpop" => Command::Blpop(Blpop::parse_frames(&mut parse)?),
-            "subscribe" => Command::Subscribe(Subscribe::parse_frames(&mut parse)?),    
+            "subscribe" => Command::Subscribe(Subscribe::parse_frames(&mut parse)?),
+            "zadd" => Command::Zadd(Zadd::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.

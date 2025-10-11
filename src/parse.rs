@@ -70,6 +70,16 @@ impl Parse {
         }
     }
 
+    pub fn next_double(&mut self) -> Result<f64, ParseError> {
+
+        const MSG: &str = "protocol error; invalid double";
+
+        match self.next()? {
+            Frame::Double(v) => Ok(v),
+            frame => Err(format!("protocol error; expected double frame but got {:?}", frame).into()),
+        }
+    }
+
     pub fn next_bytes(&mut self) -> Result<Bytes, ParseError> {
         match self.next()? {
             Frame::Simple(msg) => Ok(msg.into_bytes().into()),
