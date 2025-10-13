@@ -3,9 +3,9 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 
 use crate::{
+    env::Env,
     frame::Frame,
     parse::{Parse, ParseError},
-    Env,
 };
 
 pub struct Set {

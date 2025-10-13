@@ -2,7 +2,7 @@
 
 use core::str;
 use std::{
-    cmp::min, collections::{BTreeSet, HashMap, HashSet}, path::PathBuf, sync::{Arc, Mutex}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}, vec
+    cmp::min, collections::{HashMap, HashSet}, path::PathBuf, sync::{Arc, Mutex}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}, vec
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -18,208 +18,18 @@ use tokio::{
 };
 use tokio_util::codec::Framed;
 
-use crate::cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, zadd::Zadd};
+use crate::{cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zscore::Zscore}, dbfile::parse_dbfile};
 
 mod cmd;
 mod frame;
 mod parse;
+mod env;
+mod dbfile;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 
-async fn parse_dbfile(mut buf: BytesMut, db: DB) {
-    println!("{:?}", String::from_utf8_lossy(&buf[..]));
-    let header = &buf[..9];
-    let header = str::from_utf8(header).unwrap();
-    println!("header: {}", header);
-    buf.advance(9);
 
-    let mut metadatas = Vec::new();
-    while buf[0] == 0xFA {
-        buf.advance(1);
-
-        let name = string_decode(&mut buf);
-        let value = string_decode(&mut buf);
-
-        metadatas.push((name, value));
-    }
-    println!("metadatas: {:?}", metadatas);
-
-    let mut db = db.lock().unwrap();
-    while buf[0] == 0xFE {
-        buf.advance(1);
-
-        let index = size_decode(&mut buf);
-        println!("index: {}", index);
-        if buf[0] == 0xFB {
-            buf.advance(1);
-            let size = size_decode(&mut buf);
-            println!("size: {}", size);
-            let expire_size = size_decode(&mut buf);
-            println!("expire_size: {}", expire_size);
-
-            for _ in 0..size {
-                let expire = if buf[0] == 0xFC {
-                    let value = u64::from_le_bytes(buf[1..][..8].try_into().unwrap());
-                    println!("{value:?} millis");
-                    buf.advance(9);
-                    let time = UNIX_EPOCH + Duration::from_millis(value);
-
-                    let earlier = SystemTime::now();
-                    if time < earlier {
-                        Some(Instant::now())
-                    } else {
-                        Some(Instant::now() + time.duration_since(earlier).unwrap())
-                    }
-                } else if buf[0] == 0xFD {
-                    let value = u32::from_le_bytes(buf[1..][..4].try_into().unwrap());
-                    println!("{value:?} secs");
-                    buf.advance(5);
-                    let time = UNIX_EPOCH + Duration::from_secs(value as u64);
-
-                    let earlier = SystemTime::now();
-                    if time < earlier {
-                        Some(Instant::now())
-                    } else {
-                        Some(Instant::now() + time.duration_since(earlier).unwrap())
-                    }
-                } else {
-                    None
-                };
-                let value_type = buf[0];
-                assert_eq!(value_type, 0);
-                buf.advance(1);
-                let key = string_decode(&mut buf);
-                let value = string_decode(&mut buf);
-                db.insert(key, (value.into(), expire));
-            }
-        }
-    }
-
-    println!("db: {:?}", db);
-
-    assert_eq!(buf[0], 0xFF);
-    println!("end of file");
-    buf.advance(1);
-
-    let _crc = &buf[..8];
-    buf.advance(8);
-}
-
-fn _list_decode(src: &mut BytesMut) -> Vec<String> {
-    let size = size_decode(src);
-    (0..size).map(|_| string_decode(src)).collect()
-}
-
-fn string_decode(src: &mut BytesMut) -> String {
-    match src[0] {
-        0xC0 => {
-            let s = src[1].to_string();
-            src.advance(2);
-            s
-        }
-
-        0xC1 => {
-            let s = u16::from_le_bytes([src[1], src[2]]).to_string();
-            src.advance(3);
-            s
-        }
-
-        0xC2 => {
-            let s = u32::from_le_bytes([src[1], src[2], src[3], src[4]]).to_string();
-            src.advance(5);
-            s
-        }
-
-        _ => {
-            let len = size_decode(src);
-            let s = String::from_utf8(src[..len].to_vec()).unwrap();
-            src.advance(len);
-            s
-        }
-    }
-}
-
-fn size_decode(src: &mut BytesMut) -> usize {
-    let indicator = (src[0] & 0b1100_0000) >> 6;
-    let b0 = src[0] & 0b0011_1111;
-    match indicator {
-        0b00 => {
-            let size = b0 as usize;
-            src.advance(1);
-            size
-        }
-
-        0b01 => {
-            let size = (b0 as usize) << 8 | (src[1] as usize);
-            src.advance(2);
-            size
-        }
-
-        0b10 => {
-            let size = (b0 as usize) << 32
-                | (src[1] as usize) << 24
-                | (src[2] as usize) << 16
-                | (src[3] as usize) << 8
-                | (src[4] as usize);
-
-            src.advance(4);
-            size
-        }
-
-        _ => unreachable!(),
-    }
-}
-
-#[test]
-fn test_expire() {
-    let value = u32::from_le_bytes([0x52, 0xED, 0x2A, 0x66]);
-    let time = UNIX_EPOCH + Duration::from_secs(value as u64);
-
-    let expire = Some(Instant::now() + time.elapsed().unwrap());
-
-    println!("{expire:?}");
-}
-
-#[test]
-fn test_string_decode() {
-    let encoded = vec![
-        0x0D, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20, 0x57, 0x6F, 0x72, 0x6C, 0x64, 0x21,
-    ];
-    let mut buf = BytesMut::from(&encoded[..]);
-    let s = string_decode(&mut buf);
-    assert_eq!(s, "Hello, World!");
-
-    let encoded = vec![0xC0, 0x7B];
-    let mut buf = BytesMut::from(&encoded[..]);
-    let s = string_decode(&mut buf);
-    assert_eq!(s, "123");
-
-    let encoded = vec![0xC1, 0x39, 0x30];
-    let mut buf = BytesMut::from(&encoded[..]);
-    let s = string_decode(&mut buf);
-    assert_eq!(s, "12345");
-
-    let encoded = vec![0xC2, 0x87, 0xD6, 0x12, 0x00];
-    let mut buf = BytesMut::from(&encoded[..]);
-    let s = string_decode(&mut buf);
-    assert_eq!(s, "1234567");
-}
-
-#[test]
-fn test_size_decode() {
-    let mut buf = BytesMut::from(&0x0A_u8.to_be_bytes()[..]);
-    let s = size_decode(&mut buf);
-    assert_eq!(s, 10);
-
-    let mut buf = BytesMut::from(&0x42BC_u16.to_be_bytes()[..]);
-    let s = size_decode(&mut buf);
-    assert_eq!(s, 700);
-
-    let mut buf = BytesMut::from(&(0x8000004268_u64 << 24).to_be_bytes()[..]);
-    let s = size_decode(&mut buf);
-    assert_eq!(s, 17000);
-}
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -234,45 +44,7 @@ struct Args {
     replicaof: Option<String>,
 }
 
-pub type DB = Arc<Mutex<HashMap<String, (Bytes, Option<Instant>)>>>;
-pub type STREAMS = Arc<Mutex<HashMap<String, Vec<((u128, u64), Vec<(String, Bytes)>)>>>>;
-pub type LISTS = Arc<Mutex<HashMap<String, Vec<String>>>>;
-pub type WAIT_LISTS = Arc<Mutex<HashMap<String, Vec<oneshot::Sender<String>>>>>;
 
-#[derive(Clone)]
-pub struct Env {
-    pub db: DB,
-    pub config: Arc<Mutex<HashMap<String, String>>>,
-    pub streams: STREAMS,
-    pub tx: broadcast::Sender<(Frame, Option<mpsc::Sender<u64>>)>,
-    pub streams_tx: broadcast::Sender<(String, Option<Vec<((u128, u64), Vec<(String, Bytes)>)>>)>,
-    pub lists: LISTS,
-    pub wait_lists: WAIT_LISTS,
-    pub zsets: Arc<Mutex<HashMap<String, BTreeSet<(f64, String)>>>>,
-}
-
-impl Env {
-    pub fn new() -> Self {
-        let db: DB = Arc::new(Mutex::new(HashMap::new()));
-        let config = Arc::new(Mutex::new(HashMap::new()));
-        let streams: STREAMS = Arc::new(Mutex::new(HashMap::new()));
-        let (tx, _) = broadcast::channel(32);
-        let (streams_tx, _) = broadcast::channel(32);
-        let lists: LISTS = Arc::new(Mutex::new(HashMap::new()));
-        let wait_lists: WAIT_LISTS = Arc::new(Mutex::new(HashMap::new()));
-        let zsets = Arc::new(Mutex::new(HashMap::new()));
-        Self {
-            db,
-            config,
-            streams,
-            tx,
-            streams_tx,
-            lists,
-            wait_lists,
-            zsets,
-        }
-    }
-}
 
 #[tokio::main]
 async fn main() {
@@ -281,7 +53,7 @@ async fn main() {
     let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
     let master_repl_offset = 0;
 
-    let env = Env::new();
+    let env = env::Env::new();
 
     if let Some(dir) = args.dir.as_deref() {
         env.config
@@ -509,7 +281,7 @@ async fn main() {
                                         .lock()
                                         .unwrap()
                                         .get(&xrange.stream_key)
-                                        .and_then(|s| {
+                                        .map(|s| {
                                             let start_index = if let Some(start) = start {
                                                 s.binary_search_by(|e| {
                                                     e.0 .0.cmp(&start.0).then(e.0 .1.cmp(&start.1))
@@ -526,8 +298,8 @@ async fn main() {
                                             } else {
                                                 s.len() - 1
                                             };
-                                            let entries = s[start_index..=end_index].to_vec();
-                                            Some(entries)
+                                            
+                                            s[start_index..=end_index].to_vec()
                                         });
                                     let frame = if let Some(entries) = entries {
                                         let entries = entries
@@ -539,7 +311,7 @@ async fn main() {
                                                     .flat_map(|pair| {
                                                         vec![
                                                             Frame::Bulk(pair.0.into()),
-                                                            Frame::Bulk(pair.1.into()),
+                                                            Frame::Bulk(pair.1),
                                                         ]
                                                         .into_iter()
                                                     })
@@ -567,7 +339,7 @@ async fn main() {
                                             .streams
                                             .iter()
                                             .map(|(stream_key, id)| {
-                                                let start = parse_id(&id, None).ok();
+                                                let start = parse_id(id, None).ok();
                                                 let entries = streams
                                                     .lock()
                                                     .unwrap()
@@ -605,7 +377,7 @@ async fn main() {
                                                         block_millis,
                                                     )) => {},
                                                     Ok(stream) = streams_rx.recv() => {
-                                                        if xread.streams.iter().find(|(key, _)| *key == stream.0).is_some() {
+                                                        if xread.streams.iter().any(|(key, _)| *key == stream.0) {
                                                             results = vec![stream];
                                                         }
                                                     }
@@ -616,8 +388,7 @@ async fn main() {
                                                     if xread
                                                         .streams
                                                         .iter()
-                                                        .find(|(key, _)| *key == stream.0)
-                                                        .is_some()
+                                                        .any(|(key, _)| *key == stream.0)
                                                     {
                                                         results = vec![stream];
                                                         break;
@@ -639,7 +410,7 @@ async fn main() {
                                                             .flat_map(|pair| {
                                                                 vec![
                                                                     Frame::Bulk(pair.0.into()),
-                                                                    Frame::Bulk(pair.1.into()),
+                                                                    Frame::Bulk(pair.1),
                                                                 ]
                                                                 .into_iter()
                                                             })
@@ -754,7 +525,6 @@ async fn main() {
                                     let keys = {
                                         let db = db.lock().unwrap();
                                         db.keys()
-                                            .into_iter()
                                             .filter(|key| {
                                                 key.starts_with(left) && key.ends_with(right)
                                             })
@@ -796,7 +566,7 @@ async fn main() {
                                     continue;
                                 }
                                 Err(e) => {
-                                    println!("error: {}", e);
+                                    println!("error: {e}");
                                     client.send(Frame::Error(e.to_string())).await.unwrap();
                                 }
 
@@ -932,14 +702,12 @@ async fn main() {
                                         list.append(&mut elements);
                                         list.len()
                                     };
-                                    env.wait_lists.lock().unwrap().get_mut(&list_key).map(|wait_list| {
+                                    if let Some(wait_list) = env.wait_lists.lock().unwrap().get_mut(&list_key) {
                                         if !wait_list.is_empty() {
-                                            let element = env.lists.lock().unwrap().get_mut(&list_key).and_then(|list| {
-                                                Some(list.remove(0))
-                                            });
+                                            let element = env.lists.lock().unwrap().get_mut(&list_key).map(|list| list.remove(0));
                                             wait_list.remove(0).send(element.unwrap()).ok();
                                         }
-                                    });
+                                    }
                                     client.send(Frame::Integer(size as u64)).await.unwrap();
                                 },
                                 Ok(Command::Llen(llen)) => {
@@ -1019,13 +787,79 @@ async fn main() {
                                     let added = {
                                         let mut zsets = env.zsets.lock().unwrap();
                                         let zset = zsets.entry(key.clone()).or_default();
-                                        let mut added = 1;
-                                        
-                                        
-                                        added
+                                        let inserted = zset.insert((score, value));
+                
+                                        if inserted { 1 } else { 0 }
                                     };
                                     client.send(Frame::Integer(added as u64)).await.unwrap();
                                 },
+                                Ok(Command::Zrank(zrank)) => {
+                                    dbg!(&zrank);
+                                    let Zrank{key, member} = zrank;
+                                    let rank = {
+                                        let zsets = env.zsets.lock().unwrap();
+                                        if let Some(zset) = zsets.get(&key) {
+                                            zset.rank(&member)
+                                        } else {
+                                            None
+                                        }
+                                    };
+                                    let frame = match rank {
+                                        Some(r) => Frame::Integer(r as u64),
+                                        None => Frame::Null,
+                                    };
+                                    client.send(frame).await.unwrap();
+                                },
+                                Ok(Command::Zrange(zrange)) => {
+                                    dbg!(&zrange);
+                                    let Zrange{key, start, stop} = zrange;
+                                    let members = {
+                                        let zsets = env.zsets.lock().unwrap();
+                                        if let Some(zset) = zsets.get(&key) {
+                                            zset.range(start, stop).into_iter().map(|(_, member)| {
+                                                member
+                                            }).collect()
+                                        } else {
+                                            vec![]
+                                        }
+                                    };
+                                    if members.is_empty() {
+                                        client.send(Frame::Null).await.unwrap();
+                                    } else {
+                                        let frames = members.into_iter().map(|member| Frame::Bulk(member.into())).collect();
+                                        client.send(Frame::Array(frames)).await.unwrap();
+                                    }
+                                }
+                                Ok(Command::Zcard(zcard)) => {
+                                    dbg!(&zcard);
+                                    let Zcard{key} = zcard;
+                                    let card = {
+                                        let zsets = env.zsets.lock().unwrap();
+                                        if let Some(zset) = zsets.get(&key) {
+                                            zset.card()
+                                        } else {
+                                            0
+                                        }
+                                    };
+                                    client.send(Frame::Integer(card as u64)).await.unwrap();
+                                }
+                                Ok(Command::Zscore(zscore)) => {
+                                    dbg!(&zscore);
+                                    let Zscore{key, member} = zscore;
+                                    let score = {
+                                        let zsets = env.zsets.lock().unwrap();
+                                        if let Some(zset) = zsets.get(&key) {
+                                            zset.score(&member)
+                                        } else {
+                                            None
+                                        }
+                                    };
+                                    let frame = match score {
+                                        Some(s) => Frame::Bulk(s.to_string().into()),
+                                        None => Frame::Null,
+                                    };
+                                    client.send(frame).await.unwrap();
+                                }
 
                                 _ => unreachable!(),
                             }
@@ -1034,7 +868,7 @@ async fn main() {
                 });
             }
             Err(e) => {
-                println!("error: {}", e);
+                println!("error: {e}");
             }
         }
     }
@@ -1056,7 +890,7 @@ fn parse_id(new_id: &str, last_id: Option<(u128, u64)>) -> Result<(u128, u64)> {
             Ok((millis, seq))
         }
         Some((millis, "*")) | Some((millis, "")) => {
-            let millis = u128::from_str_radix(millis, 10).unwrap();
+            let millis = millis.parse::<u128>().unwrap();
             let mut seq = if millis == 0 { 1 } else { 0 };
             if let Some((last_millis, last_seq)) = last_id {
                 if millis == last_millis {
@@ -1066,8 +900,8 @@ fn parse_id(new_id: &str, last_id: Option<(u128, u64)>) -> Result<(u128, u64)> {
             Ok((millis, seq))
         }
         Some((millis, seq)) => {
-            let millis = u128::from_str_radix(millis, 10).unwrap();
-            let seq = u64::from_str_radix(seq, 10).unwrap();
+            let millis = millis.parse::<u128>().unwrap();
+            let seq = seq.parse::<u64>().unwrap();
             if millis == 0 && seq == 0 {
                 return Err("ERR The ID specified in XADD must be greater than 0-0".into());
             }

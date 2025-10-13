@@ -19,35 +19,46 @@ use xadd::Xadd;
 use xrange::Xrange;
 use xread::Xread;
 
-use crate::{cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, subscribe::Subscribe, zadd::Zadd}, frame::Frame, parse::Parse, Env};
+use crate::{
+    cmd::{
+        blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, subscribe::Subscribe, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zscore::Zscore
+    },
+    env::Env,
+    frame::Frame,
+    parse::Parse,
+};
 
+pub mod blpop;
 pub mod config_get;
+pub mod discard;
 pub mod echo;
 pub mod exec;
 pub mod get;
 pub mod incr;
 pub mod info;
 pub mod keys;
+pub mod llen;
+pub mod lpop;
+pub mod lpush;
+pub mod lrange;
 pub mod multi;
 pub mod ping;
 pub mod psync;
 pub mod replconf;
+pub mod rpush;
 pub mod rtype;
 pub mod set;
+pub mod subscribe;
 pub mod unknown;
 pub mod wait;
 pub mod xadd;
 pub mod xrange;
 pub mod xread;
-pub mod discard;
-pub mod rpush;
-pub mod lrange;
-pub mod lpush;
-pub mod llen;
-pub mod lpop;
-pub mod blpop;
-pub mod subscribe;
 pub mod zadd;
+pub mod zrank;
+pub mod zrange;
+pub mod zcard;
+pub mod zscore;
 
 pub enum Command {
     Ping(Ping),
@@ -77,6 +88,10 @@ pub enum Command {
     Blpop(Blpop),
     Subscribe(Subscribe),
     Zadd(Zadd),
+    Zrank(Zrank),
+    Zrange(Zrange),
+    Zcard(Zcard),
+    Zscore(Zscore),
 }
 
 impl Command {
@@ -113,6 +128,10 @@ impl Command {
             "blpop" => Command::Blpop(Blpop::parse_frames(&mut parse)?),
             "subscribe" => Command::Subscribe(Subscribe::parse_frames(&mut parse)?),
             "zadd" => Command::Zadd(Zadd::parse_frames(&mut parse)?),
+            "zrank" => Command::Zrank(Zrank::parse_frames(&mut parse)?),
+            "zrange" => Command::Zrange(Zrange::parse_frames(&mut parse)?),
+            "zcard" => Command::Zcard(Zcard::parse_frames(&mut parse)?),
+            "zscore" => Command::Zscore(Zscore::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.

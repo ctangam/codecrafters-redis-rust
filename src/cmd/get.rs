@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::{frame::Frame, parse::Parse, Env};
+use crate::{frame::Frame, parse::Parse, env::Env};
 
 pub struct Get {
     pub key: String,

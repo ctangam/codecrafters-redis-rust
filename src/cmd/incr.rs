@@ -10,7 +10,7 @@ impl Incr {
         Ok(Self { key })
     }
 
-    pub async fn exec(&self, env: crate::Env) -> crate::frame::Frame {
+    pub async fn exec(&self, env: crate::env::Env) -> crate::frame::Frame {
         use atoi::atoi;
         let mut frame = Frame::Integer(1);
         env.db
