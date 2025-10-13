@@ -76,6 +76,16 @@ impl SortedSet {
     pub fn score(&self, member: &str) -> Option<f64> {
         self.entries.iter().find(|e| e.1 == member).map(|e| e.0)
     }
+
+    pub fn remove(&mut self, member: &str) -> bool {
+        let pos = self.entries.iter().position(|(_, m)| m == member);
+        if let Some(pos) = pos  {
+            self.entries.remove(pos);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[test]

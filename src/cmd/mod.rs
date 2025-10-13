@@ -19,9 +19,10 @@ use xadd::Xadd;
 use xrange::Xrange;
 use xread::Xread;
 
+
 use crate::{
     cmd::{
-        blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, subscribe::Subscribe, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zscore::Zscore
+        blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, subscribe::Subscribe, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore
     },
     env::Env,
     frame::Frame,
@@ -59,6 +60,7 @@ pub mod zrank;
 pub mod zrange;
 pub mod zcard;
 pub mod zscore;
+pub mod zrem;
 
 pub enum Command {
     Ping(Ping),
@@ -92,6 +94,7 @@ pub enum Command {
     Zrange(Zrange),
     Zcard(Zcard),
     Zscore(Zscore),
+    Zrem(Zrem),
 }
 
 impl Command {
@@ -132,6 +135,7 @@ impl Command {
             "zrange" => Command::Zrange(Zrange::parse_frames(&mut parse)?),
             "zcard" => Command::Zcard(Zcard::parse_frames(&mut parse)?),
             "zscore" => Command::Zscore(Zscore::parse_frames(&mut parse)?),
+            "zrem" => Command::Zrem(Zrem::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.

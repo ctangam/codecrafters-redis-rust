@@ -18,7 +18,7 @@ use tokio::{
 };
 use tokio_util::codec::Framed;
 
-use crate::{cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zscore::Zscore}, dbfile::parse_dbfile};
+use crate::{cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore}, dbfile::parse_dbfile};
 
 mod cmd;
 mod frame;
@@ -858,6 +858,20 @@ async fn main() {
                                         Some(s) => Frame::Bulk(s.to_string().into()),
                                         None => Frame::Null,
                                     };
+                                    client.send(frame).await.unwrap();
+                                }
+                                Ok(Command::Zrem(zrem)) => {
+                                    dbg!(&zrem);
+                                    let Zrem{key, member} = zrem;
+                                    let removed = {
+                                        let mut zsets = env.zsets.lock().unwrap();
+                                        if let Some(zset) = zsets.get_mut(&key) {
+                                            zset.remove(&member)
+                                        } else {
+                                            false
+                                        }
+                                    };
+                                    let frame = if removed { Frame::Integer(1) } else { Frame::Integer(0) };
                                     client.send(frame).await.unwrap();
                                 }
 
