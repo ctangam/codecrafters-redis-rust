@@ -10,10 +10,6 @@ impl Zadd {
         let key = parse.next_string()?;
         let score = parse.next_double()?;
         let value = parse.next_string()?;
-        Ok(Zadd {
-            key,
-            score,
-            value,
-        })
+        Ok(Zadd { key, score, value })
     }
 }

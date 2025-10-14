@@ -19,10 +19,11 @@ use xadd::Xadd;
 use xrange::Xrange;
 use xread::Xread;
 
-
 use crate::{
     cmd::{
-        blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, subscribe::Subscribe, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore
+        blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, publish::Publish,
+        rpush::Rpush, subscribe::Subscribe, unsubscribe::Unsubscribe, zadd::Zadd, zcard::Zcard,
+        zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore,
     },
     env::Env,
     frame::Frame,
@@ -45,22 +46,24 @@ pub mod lrange;
 pub mod multi;
 pub mod ping;
 pub mod psync;
+pub mod publish;
 pub mod replconf;
 pub mod rpush;
 pub mod rtype;
 pub mod set;
 pub mod subscribe;
 pub mod unknown;
+pub mod unsubscribe;
 pub mod wait;
 pub mod xadd;
 pub mod xrange;
 pub mod xread;
 pub mod zadd;
-pub mod zrank;
-pub mod zrange;
 pub mod zcard;
-pub mod zscore;
+pub mod zrange;
+pub mod zrank;
 pub mod zrem;
+pub mod zscore;
 
 pub enum Command {
     Ping(Ping),
@@ -89,6 +92,8 @@ pub enum Command {
     Lpop(Lpop),
     Blpop(Blpop),
     Subscribe(Subscribe),
+    Unsubscribe(Unsubscribe),
+    Publish(Publish),
     Zadd(Zadd),
     Zrank(Zrank),
     Zrange(Zrange),
@@ -130,6 +135,8 @@ impl Command {
             "lpop" => Command::Lpop(Lpop::parse_frames(&mut parse)?),
             "blpop" => Command::Blpop(Blpop::parse_frames(&mut parse)?),
             "subscribe" => Command::Subscribe(Subscribe::parse_frames(&mut parse)?),
+            "unsubscribe" => Command::Unsubscribe(Unsubscribe::parse_frames(&mut parse)?),
+            "publish" => Command::Publish(Publish::parse_frames(&mut parse)?),
             "zadd" => Command::Zadd(Zadd::parse_frames(&mut parse)?),
             "zrank" => Command::Zrank(Zrank::parse_frames(&mut parse)?),
             "zrange" => Command::Zrange(Zrange::parse_frames(&mut parse)?),
@@ -162,27 +169,9 @@ pub trait Executor {
 impl Executor for Command {
     async fn exec(&self, env: Env) -> Frame {
         match self {
-            Command::Ping(ping) => todo!(),
-            Command::Echo(echo) => todo!(),
             Command::Set(set) => set.exec(env).await,
             Command::Get(get) => get.exec(env).await,
-            Command::Unknown(unknown) => todo!(),
-            Command::ConfigGet(config_get) => todo!(),
-            Command::Keys(keys) => todo!(),
-            Command::Info(info) => todo!(),
-            Command::Replconf(replconf) => todo!(),
-            Command::Psync(psync) => todo!(),
-            Command::Wait(wait) => todo!(),
-            Command::Rtype(rtype) => todo!(),
-            Command::Xadd(xadd) => todo!(),
-            Command::Xrange(xrange) => todo!(),
-            Command::Xread(xread) => todo!(),
             Command::Incr(incr) => incr.exec(env).await,
-            Command::Multi(multi) => todo!(),
-            Command::Exec(exec) => todo!(),
-            Command::Discard(discard) => todo!(),
-            Command::Rpush(rpush) => todo!(),
-            Command::Lrange(lrange) => todo!(),
             _ => todo!(),
         }
     }

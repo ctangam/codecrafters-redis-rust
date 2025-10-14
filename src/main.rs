@@ -1,8 +1,13 @@
 // Uncomment this block to pass the first stage
 
-use core::str;
+use core::{panic::PanicMessage, str};
 use std::{
-    cmp::min, collections::{HashMap, HashSet}, path::PathBuf, sync::{Arc, Mutex}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}, vec
+    cmp::min,
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    vec,
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -14,22 +19,29 @@ use tokio::{
     fs::File,
     io::AsyncReadExt,
     net::{TcpListener, TcpStream},
+    select,
     sync::{broadcast, mpsc, oneshot},
 };
+use tokio_stream::StreamMap;
 use tokio_util::codec::Framed;
 
-use crate::{cmd::{blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, rpush::Rpush, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore}, dbfile::parse_dbfile};
+use crate::{
+    cmd::{
+        blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, publish::Publish,
+        rpush::Rpush, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem,
+        zscore::Zscore,
+    },
+    dbfile::parse_dbfile,
+};
 
 mod cmd;
+mod dbfile;
+mod env;
 mod frame;
 mod parse;
-mod env;
-mod dbfile;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
-
-
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -43,8 +55,6 @@ struct Args {
     #[arg(long)]
     replicaof: Option<String>,
 }
-
-
 
 #[tokio::main]
 async fn main() {
@@ -203,7 +213,6 @@ async fn main() {
                     let mut received = false;
                     let mut trans = false;
                     let mut queue: Vec<Command> = Vec::new();
-                    let mut channels = HashSet::new();
                     loop {
                         if let Some(Ok((_, frame))) = client.next().await {
                             match Command::from(frame.clone()) {
@@ -776,11 +785,89 @@ async fn main() {
                                 },
                                 Ok(Command::Subscribe(subscribe)) => {
                                     dbg!(&subscribe);
+                                    let mut stream_map = StreamMap::new();
+                                    let mut channels = Vec::new();
+
                                     channels.extend(subscribe.channels);
-                                    let frames = vec![Frame::Bulk("subscribe".into())];
-                                    let frames = frames.into_iter().chain(channels.iter().map(|channel| Frame::Bulk(channel.clone().into()))).chain(vec![Frame::Integer(channels.len() as u64)].into_iter()).collect();
-                                    client.send(Frame::Array(frames)).await.unwrap();
+                                    loop 
+                                    {
+                                        {
+                                            let mut pubsub = env.pubsub.lock().unwrap();
+                                            for channel in channels.drain(..) {
+                                                let mut rx = match pubsub.get(&channel) {
+                                                    Some(tx) => {
+                                                        tx.subscribe()
+                                                    }
+                                                    None => {
+                                                        let (tx, rx) = broadcast::channel(32);
+                                                        pubsub.insert(channel.clone(), tx);
+                                                        rx
+                                                    }
+                                                };
+                                                let rx = Box::pin(async_stream::stream! {
+                                                    loop {
+                                                        match rx.recv().await {
+                                                            Ok(msg) => yield msg,
+                                                            Err(broadcast::error::RecvError::Lagged(_)) => {},
+                                                            Err(_) => break,
+                                                        }
+                                                    }
+                                                });
+                                                stream_map.insert(channel.clone(), rx);
+                                            }
+                                        }
+                                        
+
+                                        select! {
+                                            Some((channel, msg)) = stream_map.next() => {
+                                                client.send(Frame::Array(vec![
+                                                    Frame::Bulk("message".into()),
+                                                    Frame::Bulk(channel.into()),
+                                                    Frame::Bulk(msg),
+                                                ])).await.unwrap();
+                                            }
+                                            Some(Ok((_, frame))) = client.next() => {
+                                                match Command::from(frame) {
+                                                    Ok(Command::Subscribe(subscribe)) => {
+                                                        channels.extend(subscribe.channels);   
+                                                    }
+                                                    Ok(Command::Unsubscribe(mut unsubscribe)) => {
+                                                        if unsubscribe.channels.is_empty() {
+                                                            unsubscribe.channels = stream_map.keys().map(|s| s.to_string()).collect();
+                                                        }
+                                                        
+                                                        for channel in unsubscribe.channels {
+                                                            stream_map.remove(&channel);
+                                                            client.send(Frame::Array(vec![
+                                                                Frame::Bulk("unsubscribe".into()),
+                                                                Frame::Bulk(channel.clone().into()),
+                                                                Frame::Integer(stream_map.len() as u64),
+                                                            ])).await.unwrap();
+                                                        }
+                                                    }
+                                                    Ok(Command::Ping(_)) => {
+                                                        client.send(Frame::Array(vec![
+                                                            Frame::Bulk("pong".into()),
+                                                            Frame::Bulk("".into()),
+                                                        ])).await.unwrap();
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                        }
+                                    }
                                 },
+                                Ok(Command::Publish(publish)) => {
+                                    dbg!(&publish);
+                                    let Publish{channel, message} = publish;
+                                    let num_subscribers = {
+                                        let pubsub = env.pubsub.lock().unwrap();
+                                        pubsub.get(&channel).map(|tx| {
+                                            tx.send(message).unwrap_or(0) 
+                                        }).unwrap_or(0)
+                                    };
+                                    client.send(Frame::Integer(num_subscribers as u64)).await.unwrap();
+                                }
                                 Ok(Command::Zadd(zadd)) => {
                                     dbg!(&zadd);
                                     let Zadd{key, score, value} = zadd;

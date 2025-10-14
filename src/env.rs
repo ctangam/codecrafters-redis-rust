@@ -1,4 +1,3 @@
-
 use std::collections::BTreeSet;
 
 use frame::Frame;
@@ -30,6 +29,8 @@ pub type WaitLists = Arc<Mutex<HashMap<String, Vec<oneshot::Sender<String>>>>>;
 
 pub type Zsets = Arc<Mutex<HashMap<String, SortedSet>>>;
 
+pub type PubSub = Arc<Mutex<HashMap<String, broadcast::Sender<Bytes>>>>;
+
 #[derive(Default)]
 pub struct SortedSet {
     pub entries: Vec<(f64, String)>,
@@ -37,7 +38,9 @@ pub struct SortedSet {
 
 impl SortedSet {
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     pub fn insert(&mut self, entry: (f64, String)) -> bool {
@@ -45,12 +48,14 @@ impl SortedSet {
         if let Some(pos) = pos {
             if entry.0 != self.entries[pos].0 {
                 self.entries[pos] = entry;
-                self.entries.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
+                self.entries
+                    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
             }
-            false 
+            false
         } else {
             self.entries.push(entry);
-            self.entries.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
+            self.entries
+                .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| a.1.cmp(&b.1)));
             true
         }
     }
@@ -61,8 +66,16 @@ impl SortedSet {
 
     pub fn range(&self, start: isize, stop: isize) -> Vec<(f64, String)> {
         let len = self.entries.len() as isize;
-        let start = if start < 0 { (len + start).max(0) } else { start.min(len) };
-        let stop = if stop < 0 { (len + stop).max(0) } else { stop.min(len) };
+        let start = if start < 0 {
+            (len + start).max(0)
+        } else {
+            start.min(len)
+        };
+        let stop = if stop < 0 {
+            (len + stop).max(0)
+        } else {
+            stop.min(len)
+        };
         if start > stop || start >= len {
             return vec![];
         }
@@ -79,7 +92,7 @@ impl SortedSet {
 
     pub fn remove(&mut self, member: &str) -> bool {
         let pos = self.entries.iter().position(|(_, m)| m == member);
-        if let Some(pos) = pos  {
+        if let Some(pos) = pos {
             self.entries.remove(pos);
             true
         } else {
@@ -95,7 +108,14 @@ fn test_sorted_set_insert() {
     assert!(zset.insert((2.0, "c".to_string())));
     assert!(zset.insert((2.0, "b".to_string())));
     assert!(!zset.insert((1.5, "a".to_string())));
-    assert_eq!(zset.entries, vec![(1.5, "a".to_string()), (2.0, "b".to_string()), (2.0, "c".to_string())]);
+    assert_eq!(
+        zset.entries,
+        vec![
+            (1.5, "a".to_string()),
+            (2.0, "b".to_string()),
+            (2.0, "c".to_string())
+        ]
+    );
 }
 
 #[derive(Clone)]
@@ -108,6 +128,7 @@ pub struct Env {
     pub lists: Lists,
     pub wait_lists: WaitLists,
     pub zsets: Zsets,
+    pub pubsub: PubSub,
 }
 
 impl Env {
@@ -120,6 +141,7 @@ impl Env {
         let lists = Arc::new(Mutex::new(HashMap::new()));
         let wait_lists = Arc::new(Mutex::new(HashMap::new()));
         let zsets = Arc::new(Mutex::new(HashMap::new()));
+        let pubsub = Arc::new(Mutex::new(HashMap::new()));
         Self {
             db,
             config,
@@ -129,6 +151,7 @@ impl Env {
             lists,
             wait_lists,
             zsets,
+            pubsub,
         }
     }
 }

@@ -88,9 +88,7 @@ impl Decoder for FrameCodec {
                 src.advance(i + 2);
                 (
                     i + 2,
-                    Frame::Double(
-                        f64::from_be_bytes(buffer.try_into().unwrap())
-                    ),
+                    Frame::Double(f64::from_be_bytes(buffer.try_into().unwrap())),
                 )
             }
             b'$' => {

@@ -1,6 +1,6 @@
 #[derive(Debug)]
 pub struct Rpush {
-    pub list_key: String, 
+    pub list_key: String,
     pub elements: Vec<String>,
 }
 
@@ -11,9 +11,6 @@ impl Rpush {
         while let Ok(s) = parse.next_string() {
             elements.push(s.replace("\"", ""));
         }
-        Ok(Rpush {
-            list_key,
-            elements,
-        })
+        Ok(Rpush { list_key, elements })
     }
 }

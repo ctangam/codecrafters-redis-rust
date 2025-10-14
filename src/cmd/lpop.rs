@@ -14,4 +14,3 @@ impl Lpop {
         Ok(Lpop { list_key, count })
     }
 }
-

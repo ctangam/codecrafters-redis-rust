@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::{frame::Frame, parse::Parse, env::Env};
+use crate::{env::Env, frame::Frame, parse::Parse};
 
 pub struct Get {
     pub key: String,
@@ -9,12 +9,10 @@ pub struct Get {
 impl Get {
     pub fn parse_frames(parse: &mut Parse) -> crate::Result<Self> {
         let key = parse.next_string()?;
-        
-        Ok(Self {
-            key
-        })
+
+        Ok(Self { key })
     }
-    
+
     pub async fn exec(&self, env: Env) -> Frame {
         let value = env.db.lock().unwrap().get(&self.key).cloned();
         if let Some((value, expires)) = value {

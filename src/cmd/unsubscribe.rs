@@ -1,14 +1,14 @@
 #[derive(Debug)]
-pub struct Subscribe {
+pub struct Unsubscribe {
     pub channels: Vec<String>,
 }
 
-impl Subscribe {
-    pub fn parse_frames(parse: &mut crate::parse::Parse) -> crate::Result<Subscribe> {
+impl Unsubscribe {
+    pub fn parse_frames(parse: &mut crate::parse::Parse) -> crate::Result<Unsubscribe> {
         let mut channels = Vec::new();
         while let Ok(s) = parse.next_string() {
             channels.push(s);
         }
-        Ok(Subscribe { channels })
+        Ok(Unsubscribe { channels })
     }
 }

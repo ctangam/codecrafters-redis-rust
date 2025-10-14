@@ -8,9 +8,6 @@ impl Blpop {
     pub fn parse_frames(parse: &mut crate::parse::Parse) -> crate::Result<Blpop> {
         let list_key = parse.next_string()?;
         let timeout = parse.next_int()? as u64;
-        Ok(Blpop {
-            list_key,
-            timeout,
-        })
+        Ok(Blpop { list_key, timeout })
     }
 }
