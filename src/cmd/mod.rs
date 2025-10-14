@@ -21,9 +21,7 @@ use xread::Xread;
 
 use crate::{
     cmd::{
-        blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, publish::Publish,
-        rpush::Rpush, subscribe::Subscribe, unsubscribe::Unsubscribe, zadd::Zadd, zcard::Zcard,
-        zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore,
+        blpop::Blpop, geoadd::Geoadd, geodist::Geodist, geopos::Geopos, geosearch::Geosearch, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, publish::Publish, rpush::Rpush, subscribe::Subscribe, unsubscribe::Unsubscribe, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore
     },
     env::Env,
     frame::Frame,
@@ -35,6 +33,7 @@ pub mod config_get;
 pub mod discard;
 pub mod echo;
 pub mod exec;
+pub mod geoadd;
 pub mod get;
 pub mod incr;
 pub mod info;
@@ -64,6 +63,9 @@ pub mod zrange;
 pub mod zrank;
 pub mod zrem;
 pub mod zscore;
+pub mod geopos;
+pub mod geodist;
+pub mod geosearch;
 
 pub enum Command {
     Ping(Ping),
@@ -100,6 +102,10 @@ pub enum Command {
     Zcard(Zcard),
     Zscore(Zscore),
     Zrem(Zrem),
+    Geoadd(Geoadd),
+    Geopos(Geopos),
+    Geodist(Geodist),
+    Geosearch(Geosearch),
 }
 
 impl Command {
@@ -143,6 +149,10 @@ impl Command {
             "zcard" => Command::Zcard(Zcard::parse_frames(&mut parse)?),
             "zscore" => Command::Zscore(Zscore::parse_frames(&mut parse)?),
             "zrem" => Command::Zrem(Zrem::parse_frames(&mut parse)?),
+            "geoadd" => Command::Geoadd(Geoadd::parse_frames(&mut parse)?),
+            "geopos" => Command::Geopos(Geopos::parse_frames(&mut parse)?),
+            "geodist" => Command::Geodist(Geodist::parse_frames(&mut parse)?),
+            "geosearch" => Command::Geosearch(Geosearch::parse_frames(&mut parse)?),
             _ => {
                 // The command is not recognized and an Unknown command is
                 // returned.

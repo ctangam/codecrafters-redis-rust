@@ -27,9 +27,7 @@ use tokio_util::codec::Framed;
 
 use crate::{
     cmd::{
-        blpop::Blpop, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, publish::Publish,
-        rpush::Rpush, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem,
-        zscore::Zscore,
+        blpop::Blpop, geoadd::Geoadd, geodist::Geodist, geopos::Geopos, geosearch::Geosearch, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, publish::Publish, rpush::Rpush, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore
     },
     dbfile::parse_dbfile,
 };
@@ -961,6 +959,83 @@ async fn main() {
                                     let frame = if removed { Frame::Integer(1) } else { Frame::Integer(0) };
                                     client.send(frame).await.unwrap();
                                 }
+                                Ok(Command::Geoadd(geoadd)) => {
+                                    dbg!(&geoadd);
+                                    let Geoadd{key, longitude, latitude, member} = geoadd;
+                                    if !(-180.0..=180.0).contains(&longitude) || !(-85.05112878..=85.05112878).contains(&latitude) {
+                                        client.send(Frame::Error(format!("ERR invalid longitude,latitude pair {longitude:.6},{latitude:.6}"))).await.unwrap();
+                                    } else {
+                                        let added = {
+                                            let mut geos = env.zsets.lock().unwrap();
+                                            let geo = geos.entry(key.clone()).or_default();
+                                            let score = cal_loc_score(longitude, latitude);
+                                            let inserted = geo.insert((score, member));
+                                            if inserted { 1 } else { 0 }
+                                        };
+                                        client.send(Frame::Integer(added as u64)).await.unwrap();
+                                    }
+                                }
+                                Ok(Command::Geopos(geopos)) => {
+                                    dbg!(&geopos);
+                                    let Geopos{key, members} = geopos;
+                                    let locations = {
+                                        let geos = env.zsets.lock().unwrap();
+                                        if let Some(geo) = geos.get(&key) {
+                                            members.iter().map(|member| geo.score(member).map(decode_coordinates)).collect::<Vec<_>>()
+                                        } else {
+                                            vec![None; members.len()]
+                                        }
+                                    };
+                                    let frames = locations.iter().map(|loc| {
+                                        if let Some((longitude, latitude)) = loc {
+                                            Frame::Array(vec![
+                                                Frame::Bulk(format!("{longitude}").into()),
+                                                Frame::Bulk(format!("{latitude}").into()),
+                                            ])
+                                        } else {
+                                            Frame::Array(vec![])
+                                        }
+                                    }).collect::<Vec<_>>();
+                                    client.send(Frame::Array(frames)).await.unwrap();
+                                }
+                                Ok(Command::Geodist(geodist)) => {
+                                    dbg!(&geodist);
+                                    let Geodist{key, member1, member2} = geodist;
+                                    let distance = {
+                                        let geos = env.zsets.lock().unwrap();
+                                        if let Some(geo) = geos.get(&key) {
+                                            if let (Some(score1), Some(score2)) = (geo.score(&member1), geo.score(&member2)) {
+                                                let loc1 = decode_coordinates(score1);
+                                                let loc2 = decode_coordinates(score2);
+                                                Some(cal_distance(loc1, loc2))
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    };
+                                    let frame = if let Some(d) = distance {
+                                        Frame::Bulk(format!("{d:.4}").into())
+                                    } else {
+                                        Frame::Null
+                                    };
+                                    client.send(frame).await.unwrap();
+                                }
+                                Ok(Command::Geosearch(geosearch)) => {
+                                    dbg!(&geosearch);
+                                    let Geosearch{key, longitude, latitude, radius, unit} = geosearch;
+                                    let members = {
+                                        let geos = env.zsets.lock().unwrap();
+                                        if let Some(geo) = geos.get(&key) {
+                                            search_within_radius(&geo.entries, (longitude, latitude), radius, &unit)
+                                        } else {
+                                            vec![]
+                                        }
+                                    };
+                                    let frames = members.into_iter().map(|member| Frame::Bulk(member.into())).collect();
+                                    client.send(Frame::Array(frames)).await.unwrap();
+                                }
 
                                 _ => unreachable!(),
                             }
@@ -973,6 +1048,34 @@ async fn main() {
             }
         }
     }
+}
+
+fn cal_loc_score(longitude: f64, latitude: f64) -> f64 {
+    todo!()
+}
+
+fn decode_coordinates(score: f64) -> (f64, f64) {
+    todo!()
+}
+
+fn cal_distance(loc1: (f64, f64), loc2: (f64, f64)) -> f64 {
+    todo!()
+}
+
+fn search_within_radius(candidates: &[(f64, String)], loc: (f64, f64), radius: f64, unit: &str) -> Vec<String> {
+    todo!()
+}
+
+
+#[test]
+fn test_f64_output() {
+    let longitude = 180f64;
+    let latitude = 90f64;
+    let s = format!("ERR invalid longitude,latitude pair {longitude:.6},{latitude:.6}");
+    assert_eq!(
+        s,
+        "ERR invalid longitude,latitude pair 180.000000,90.000000"
+    );
 }
 
 fn parse_id(new_id: &str, last_id: Option<(u128, u64)>) -> Result<(u128, u64)> {
