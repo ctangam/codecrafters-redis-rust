@@ -21,7 +21,10 @@ use xread::Xread;
 
 use crate::{
     cmd::{
-        blpop::Blpop, geoadd::Geoadd, geodist::Geodist, geopos::Geopos, geosearch::Geosearch, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, publish::Publish, rpush::Rpush, subscribe::Subscribe, unsubscribe::Unsubscribe, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore
+        blpop::Blpop, geoadd::Geoadd, geodist::Geodist, geopos::Geopos, geosearch::Geosearch,
+        llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, publish::Publish, rpush::Rpush,
+        subscribe::Subscribe, unsubscribe::Unsubscribe, zadd::Zadd, zcard::Zcard, zrange::Zrange,
+        zrank::Zrank, zrem::Zrem, zscore::Zscore,
     },
     env::Env,
     frame::Frame,
@@ -34,6 +37,9 @@ pub mod discard;
 pub mod echo;
 pub mod exec;
 pub mod geoadd;
+pub mod geodist;
+pub mod geopos;
+pub mod geosearch;
 pub mod get;
 pub mod incr;
 pub mod info;
@@ -63,9 +69,6 @@ pub mod zrange;
 pub mod zrank;
 pub mod zrem;
 pub mod zscore;
-pub mod geopos;
-pub mod geodist;
-pub mod geosearch;
 
 pub enum Command {
     Ping(Ping),

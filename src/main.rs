@@ -27,7 +27,9 @@ use tokio_util::codec::Framed;
 
 use crate::{
     cmd::{
-        blpop::Blpop, geoadd::Geoadd, geodist::Geodist, geopos::Geopos, geosearch::Geosearch, llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, publish::Publish, rpush::Rpush, zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore
+        blpop::Blpop, geoadd::Geoadd, geodist::Geodist, geopos::Geopos, geosearch::Geosearch,
+        llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, publish::Publish, rpush::Rpush,
+        zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore,
     },
     dbfile::parse_dbfile,
 };
@@ -1062,10 +1064,14 @@ fn cal_distance(loc1: (f64, f64), loc2: (f64, f64)) -> f64 {
     todo!()
 }
 
-fn search_within_radius(candidates: &[(f64, String)], loc: (f64, f64), radius: f64, unit: &str) -> Vec<String> {
+fn search_within_radius(
+    candidates: &[(f64, String)],
+    loc: (f64, f64),
+    radius: f64,
+    unit: &str,
+) -> Vec<String> {
     todo!()
 }
-
 
 #[test]
 fn test_f64_output() {
