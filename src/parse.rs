@@ -77,6 +77,9 @@ impl Parse {
 
         match self.next()? {
             Frame::Simple(data) => data.parse().map_err(|_| MSG.into()),
+            Frame::Bulk(data) => String::from_utf8_lossy(&data)
+                .parse()
+                .map_err(|_| MSG.into()),
             Frame::Double(v) => Ok(v),
             frame => {
                 Err(format!("protocol error; expected double frame but got {:?}", frame).into())
