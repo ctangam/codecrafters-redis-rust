@@ -7,7 +7,7 @@ use tokio_util::codec::{Decoder, Encoder};
 pub enum Frame {
     Simple(String),
     Error(String),
-    Integer(u64),
+    Integer(i64),
     Double(f64),
     Bulk(Bytes),
     Null,
@@ -71,7 +71,7 @@ impl Decoder for FrameCodec {
                 (
                     i + 2,
                     Frame::Integer(
-                        u64::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap(),
+                        i64::from_str_radix(str::from_utf8(&buffer).unwrap(), 10).unwrap(),
                     ),
                 )
             }

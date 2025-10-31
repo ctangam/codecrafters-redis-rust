@@ -556,12 +556,12 @@ async fn main() {
                                     println!("receiver: {}", tx.receiver_count());
                                     if !received {
                                         client
-                                            .send(Frame::Integer(tx.receiver_count() as u64))
+                                            .send(Frame::Integer(tx.receiver_count() as i64))
                                             .await
                                             .unwrap();
                                         continue;
                                     }
-                                    let (resp_tx, mut resp_rx) = mpsc::channel::<u64>(32);
+                                    let (resp_tx, mut resp_rx) = mpsc::channel::<i64>(32);
                                     tx.send((frame, Some(resp_tx))).unwrap();
 
                                     let mut acknowledged = 0;
@@ -635,7 +635,7 @@ async fn main() {
                                                         ]))
                                                         .await
                                                         .unwrap();
-                                                    let acknowledge: u64 = tokio::select! {
+                                                    let acknowledge = tokio::select! {
                                                         _ = tokio::time::sleep(Duration::from_millis(wait.timeout)) => 0,
                                                         _ = replica.next() => 1,
                                                     };
@@ -666,7 +666,7 @@ async fn main() {
                                             wait_list.remove(0).send(element.unwrap()).ok();
                                         }
                                     }
-                                    client.send(Frame::Integer(size as u64)).await.unwrap();
+                                    client.send(Frame::Integer(size as i64)).await.unwrap();
                                 },
                                 Ok(Command::Lrange(lrange)) => {
                                     dbg!(&lrange);
@@ -717,7 +717,7 @@ async fn main() {
                                             wait_list.remove(0).send(element.unwrap()).ok();
                                         }
                                     }
-                                    client.send(Frame::Integer(size as u64)).await.unwrap();
+                                    client.send(Frame::Integer(size as i64)).await.unwrap();
                                 },
                                 Ok(Command::Llen(llen)) => {
                                     dbg!(&llen);
@@ -730,7 +730,7 @@ async fn main() {
                                             0
                                         }
                                     };
-                                    client.send(Frame::Integer(size as u64)).await.unwrap();
+                                    client.send(Frame::Integer(size as i64)).await.unwrap();
                                 },
                                 Ok(Command::Lpop(lpop)) => {
                                     dbg!(&lpop);
@@ -841,7 +841,7 @@ async fn main() {
                                                             client.send(Frame::Array(vec![
                                                                 Frame::Bulk("unsubscribe".into()),
                                                                 Frame::Bulk(channel.clone().into()),
-                                                                Frame::Integer(stream_map.len() as u64),
+                                                                Frame::Integer(stream_map.len() as i64),
                                                             ])).await.unwrap();
                                                         }
                                                     }
@@ -866,7 +866,7 @@ async fn main() {
                                             tx.send(message).unwrap_or(0) 
                                         }).unwrap_or(0)
                                     };
-                                    client.send(Frame::Integer(num_subscribers as u64)).await.unwrap();
+                                    client.send(Frame::Integer(num_subscribers as i64)).await.unwrap();
                                 }
                                 Ok(Command::Zadd(zadd)) => {
                                     dbg!(&zadd);
@@ -878,7 +878,7 @@ async fn main() {
                 
                                         if inserted { 1 } else { 0 }
                                     };
-                                    client.send(Frame::Integer(added as u64)).await.unwrap();
+                                    client.send(Frame::Integer(added)).await.unwrap();
                                 },
                                 Ok(Command::Zrank(zrank)) => {
                                     dbg!(&zrank);
@@ -892,7 +892,7 @@ async fn main() {
                                         }
                                     };
                                     let frame = match rank {
-                                        Some(r) => Frame::Integer(r as u64),
+                                        Some(r) => Frame::Integer(r as i64),
                                         None => Frame::Null,
                                     };
                                     client.send(frame).await.unwrap();
@@ -928,7 +928,7 @@ async fn main() {
                                             0
                                         }
                                     };
-                                    client.send(Frame::Integer(card as u64)).await.unwrap();
+                                    client.send(Frame::Integer(card as i64)).await.unwrap();
                                 }
                                 Ok(Command::Zscore(zscore)) => {
                                     dbg!(&zscore);
@@ -974,7 +974,7 @@ async fn main() {
                                             let inserted = geo.insert((score, member));
                                             if inserted { 1 } else { 0 }
                                         };
-                                        client.send(Frame::Integer(added as u64)).await.unwrap();
+                                        client.send(Frame::Integer(added)).await.unwrap();
                                     }
                                 }
                                 Ok(Command::Geopos(geopos)) => {

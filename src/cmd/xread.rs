@@ -9,7 +9,7 @@ impl Xread {
     pub fn parse_frames(parse: &mut Parse) -> crate::Result<Self> {
         let tag = parse.next_string()?;
         let (block_millis, prefix) = if tag == "block" {
-            let block_millis = parse.next_int()?;
+            let block_millis = parse.next_int()? as u64;
             parse.next_string()?;
             (Some(block_millis), 4)
         } else {

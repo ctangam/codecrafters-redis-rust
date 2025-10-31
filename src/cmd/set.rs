@@ -30,11 +30,11 @@ impl Set {
 
         match parse.next_string() {
             Ok(s) if s.to_uppercase() == "EX" => {
-                let seconds = parse.next_int()?;
+                let seconds = parse.next_int()? as u64;
                 expire = Some(Duration::from_secs(seconds));
             }
             Ok(s) if s.to_uppercase() == "PX" => {
-                let milliseconds = parse.next_int()?;
+                let milliseconds = parse.next_int()? as u64;
                 expire = Some(Duration::from_millis(milliseconds));
             }
             Ok(_) => return Err("currently `SET` only supports the expiration option".into()),

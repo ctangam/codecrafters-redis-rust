@@ -123,7 +123,7 @@ pub struct Env {
     pub db: DB,
     pub config: Arc<Mutex<HashMap<String, String>>>,
     pub streams: Streams,
-    pub tx: broadcast::Sender<(Frame, Option<mpsc::Sender<u64>>)>,
+    pub tx: broadcast::Sender<(Frame, Option<mpsc::Sender<i64>>)>,
     pub streams_tx: StreamsTx,
     pub lists: Lists,
     pub wait_lists: WaitLists,

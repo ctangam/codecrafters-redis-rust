@@ -18,7 +18,7 @@ impl Incr {
             .unwrap()
             .entry(self.key.clone())
             .and_modify(|(v, _)| {
-                if let Some(mut num) = atoi::<u64>(v) {
+                if let Some(mut num) = atoi::<i64>(v) {
                     num += 1;
                     frame = Frame::Integer(num);
                     *v = num.to_string().into()
