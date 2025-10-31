@@ -1011,7 +1011,7 @@ async fn main() {
                                                 Frame::Bulk(format!("{latitude}").into()),
                                             ])
                                         } else {
-                                            Frame::Array(vec![])
+                                            Frame::NullArray
                                         }
                                     }).collect::<Vec<_>>();
                                     client.send(Frame::Array(frames)).await.unwrap();
