@@ -810,6 +810,7 @@ async fn main() {
                                     channels.extend(subscribe.channels);
                                     loop 
                                     {
+                                        let mut frames = Vec::new();
                                         {
                                             let mut pubsub = env.pubsub.lock().unwrap();
                                             for channel in channels.drain(..) {
@@ -833,7 +834,16 @@ async fn main() {
                                                     }
                                                 });
                                                 stream_map.insert(channel.clone(), rx);
+
+                                                frames.push(Frame::Array(vec![
+                                                            Frame::Bulk("subscribe".into()),
+                                                            Frame::Bulk(channel.clone().into()),
+                                                            Frame::Integer(stream_map.len() as i64),
+                                                        ]));
                                             }
+                                        }
+                                        for frame in frames {
+                                            client.send(frame).await.unwrap();
                                         }
                                         
 
