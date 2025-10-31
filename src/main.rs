@@ -881,7 +881,8 @@ async fn main() {
                                                             Frame::Bulk("".into()),
                                                         ])).await.unwrap();
                                                     }
-                                                    _ => {}
+                                                    Ok(cmd) => client.send(Frame::Error(format!("ERR Can't execute '{cmd}' in subscribed mode"))).await.unwrap(),
+                                                    Err(e) => client.send(Frame::Error(e.to_string())).await.unwrap(),
                                                 }
                                             }
                                         }

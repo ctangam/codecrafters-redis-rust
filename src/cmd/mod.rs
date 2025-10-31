@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use async_trait::async_trait;
 use config_get::ConfigGet;
 use discard::Discard;
@@ -186,6 +188,20 @@ impl Executor for Command {
             Command::Get(get) => get.exec(env).await,
             Command::Incr(incr) => incr.exec(env).await,
             _ => todo!(),
+        }
+    }
+}
+
+impl Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Command::Ping(_) => write!(f, "PING"),
+            Command::Echo(_) => write!(f, "ECHO"),
+            Command::Set(_) => write!(f, "SET"),
+            Command::Get(_) => write!(f, "GET"),
+            Command::Incr(_) => write!(f, "INCR"),
+            Command::Unknown(_) => write!(f, "UNKNOWN"),
+            _ => write!(f, "UNIMPLEMENTED COMMAND"),
         }
     }
 }
