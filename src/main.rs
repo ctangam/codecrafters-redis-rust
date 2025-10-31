@@ -31,7 +31,7 @@ use crate::{
         llen::Llen, lpop::Lpop, lpush::Lpush, lrange::Lrange, publish::Publish, rpush::Rpush,
         zadd::Zadd, zcard::Zcard, zrange::Zrange, zrank::Zrank, zrem::Zrem, zscore::Zscore,
     },
-    dbfile::parse_dbfile,
+    dbfile::parse_dbfile, geo::{cal_distance, cal_loc_score, decode_coordinates, search_within_radius, MAX_LATITUDE, MAX_LONGITUDE, MIN_LATITUDE, MIN_LONGITUDE},
 };
 
 mod cmd;
@@ -964,7 +964,7 @@ async fn main() {
                                 Ok(Command::Geoadd(geoadd)) => {
                                     dbg!(&geoadd);
                                     let Geoadd{key, longitude, latitude, member} = geoadd;
-                                    if !(-180.0..=180.0).contains(&longitude) || !(-85.05112878..=85.05112878).contains(&latitude) {
+                                    if !(MIN_LONGITUDE..=MAX_LONGITUDE).contains(&longitude) || !(MIN_LATITUDE..=MAX_LATITUDE).contains(&latitude) {
                                         client.send(Frame::Error(format!("ERR invalid longitude,latitude pair {longitude:.6},{latitude:.6}"))).await.unwrap();
                                     } else {
                                         let added = {
@@ -1052,37 +1052,123 @@ async fn main() {
     }
 }
 
-fn cal_loc_score(longitude: f64, latitude: f64) -> f64 {
-    todo!()
+mod geo{
+
+    pub const MIN_LATITUDE: f64 = -85.05112878;
+    pub const MAX_LATITUDE: f64 = 85.05112878;
+    pub const MIN_LONGITUDE: f64 = -180.0;
+    pub const MAX_LONGITUDE: f64 = 180.0;
+
+    pub const LATITUDE_RANGE: f64 = MAX_LATITUDE - MIN_LATITUDE;
+    pub const LONGITUDE_RANGE: f64 = MAX_LONGITUDE - MIN_LONGITUDE;
+
+    pub const RADIUS : f64 = 6372797.560856; // In meters
+
+    fn normalize(longitude: f64, latitude: f64) -> (f64, f64) {
+        let normalized_longitude = 2.0f64.powi(26) * (longitude - MIN_LONGITUDE) / LONGITUDE_RANGE;
+        let normalized_latitude = 2.0f64.powi(26) * (latitude - MIN_LATITUDE) / LATITUDE_RANGE;
+        (normalized_longitude, normalized_latitude)
+    }
+
+    fn spread(bits: u32) -> u64 {
+        let mut x = bits as u64;
+        x = (x | (x << 16)) & 0x0000FFFF0000FFFF;
+        x = (x | (x <<  8)) & 0x00FF00FF00FF00FF;
+        x = (x | (x <<  4)) & 0x0F0F0F0F0F0F0F0F;
+        x = (x | (x <<  2)) & 0x3333333333333333;
+        x = (x | (x <<  1)) & 0x5555555555555555;
+        x
+    }
+    
+
+    pub fn cal_loc_score(longitude: f64, latitude: f64) -> f64 {
+        let (norm_lon, norm_lat) = normalize(longitude, latitude);
+        let (norm_lon, norm_lat) = (norm_lon.floor() as u32, norm_lat.floor() as u32);
+        let spread_lon = spread(norm_lon);
+        let spread_lat = spread(norm_lat);
+        (spread_lat | (spread_lon << 1)) as f64
+    }
+
+    fn compact(bits: u64) -> u32 {
+        let mut x = bits & 0x5555555555555555;
+        x = (x | (x >> 1)) & 0x3333333333333333;
+        x = (x | (x >> 2)) & 0x0F0F0F0F0F0F0F0F;
+        x = (x | (x >> 4)) & 0x00FF00FF00FF00FF;
+        x = (x | (x >> 8)) & 0x0000FFFF0000FFFF;
+        x = (x | (x >> 16)) & 0x00000000FFFFFFFF;
+        x as u32
+    }
+
+    pub fn decode_coordinates(score: f64) -> (f64, f64) {
+        let latitude = score as u64;
+        let longitude = score as u64 >> 1;
+
+        let latitude = compact(latitude);
+        let longitude = compact(longitude);
+
+        let latitude_min = MIN_LATITUDE + LATITUDE_RANGE * (latitude as f64 / 2.0f64.powi(26));
+        let latitude_max = MIN_LATITUDE + LATITUDE_RANGE * ((latitude + 1) as f64 / 2.0f64.powi(26));
+        let latitude = (latitude_min + latitude_max) / 2.0;
+
+        let longitude_min = MIN_LONGITUDE + LONGITUDE_RANGE * (longitude as f64 / 2.0f64.powi(26));
+        let longitude_max = MIN_LONGITUDE + LONGITUDE_RANGE * ((longitude + 1) as f64 / 2.0f64.powi(26));
+        let longitude = (longitude_min + longitude_max) / 2.0;
+        
+        (longitude, latitude)
+    }
+
+    pub fn cal_distance((lon1d, lat1d): (f64, f64), (lon2d, lat2d): (f64, f64)) -> f64 {
+        let lon1r = lon1d.to_radians();
+        let lon2r = lon2d.to_radians();
+        let v = ((lon2r - lon1r) / 2.0).sin();
+
+        let lat1r = lat1d.to_radians();
+        let lat2r = lat2d.to_radians();
+        let u = ((lat2r - lat1r) / 2.0).sin();
+
+        let a = u * u + lat1r.cos() * lat2r.cos() * v * v;
+
+        2.0 * RADIUS * a.sqrt().asin()
+    }
+
+    pub fn search_within_radius(
+        candidates: &[(f64, String)],
+        loc: (f64, f64),
+        radius: f64,
+        unit: &str,
+    ) -> Vec<String> {
+        todo!()
+    }
+
+    #[test]
+    fn test_score_cal() {
+        let longitude = 2.2944692;
+        let latitude = 48.8584625;
+        let score = cal_loc_score(longitude, latitude);
+        assert_eq!(score, 3663832614298053.0);
+    }
+
+    #[test]
+    fn test_decode() {
+        let score = 3663832614298053.0;
+        let (longitude, latitude) = decode_coordinates(score);
+        assert!((longitude - 2.294471561908722).abs() < 0.0001);
+        assert!((latitude - 48.85846255040141).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_distance() {
+        let loc1 = (11.5030378, 48.164271);
+        let loc2 = (2.2944692, 48.8584625);
+        let score1 = cal_loc_score(loc1.0, loc1.1);
+        let score2 = cal_loc_score(loc2.0, loc2.1);
+        let loc1 = decode_coordinates(score1);
+        let loc2 = decode_coordinates(score2);
+        let distance = cal_distance(loc1, loc2);
+        assert!((distance - 682477.7582).abs() < 0.001);
+    }
 }
 
-fn decode_coordinates(score: f64) -> (f64, f64) {
-    todo!()
-}
-
-fn cal_distance(loc1: (f64, f64), loc2: (f64, f64)) -> f64 {
-    todo!()
-}
-
-fn search_within_radius(
-    candidates: &[(f64, String)],
-    loc: (f64, f64),
-    radius: f64,
-    unit: &str,
-) -> Vec<String> {
-    todo!()
-}
-
-#[test]
-fn test_f64_output() {
-    let longitude = 180f64;
-    let latitude = 90f64;
-    let s = format!("ERR invalid longitude,latitude pair {longitude:.6},{latitude:.6}");
-    assert_eq!(
-        s,
-        "ERR invalid longitude,latitude pair 180.000000,90.000000"
-    );
-}
 
 fn parse_id(new_id: &str, last_id: Option<(u128, u64)>) -> Result<(u128, u64)> {
     match new_id.split_once("-") {

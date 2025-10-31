@@ -194,11 +194,7 @@ impl Encoder<Frame> for FrameCodec {
             }
             Frame::Array(frames) => {
                 dst.extend_from_slice(b"*");
-                let len = if frames.is_empty() {
-                    -1
-                } else {
-                    frames.len() as isize
-                };
+                let len = frames.len() as isize;
                 dst.extend_from_slice(len.to_string().as_bytes());
                 dst.extend_from_slice(b"\r\n");
                 for frame in frames {
