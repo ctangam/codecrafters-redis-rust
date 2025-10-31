@@ -703,12 +703,11 @@ async fn main() {
                                 },
                                 Ok(Command::Lpush(lpush)) => {
                                     dbg!(&lpush);
-                                    let Lpush{list_key, mut elements} = lpush;
-                                    elements.reverse();
+                                    let Lpush{list_key, elements} = lpush;
                                     let size = {
                                         let mut lists = env.lists.lock().unwrap();
                                         let list = lists.entry(list_key.clone()).or_default();
-                                        list.append(&mut elements);
+                                        elements.iter().for_each(|e| list.insert(0, e.clone()));
                                         list.len()
                                     };
                                     if let Some(wait_list) = env.wait_lists.lock().unwrap().get_mut(&list_key) {
