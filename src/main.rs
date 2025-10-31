@@ -1238,7 +1238,7 @@ fn adjust(start: isize, stop: isize, len: usize) -> (usize, usize) {
     } as usize;
     let stop = if (stop + len) < 0 {
         0
-                                            } else if stop < 0 {
+    } else if stop < 0 {
                                                 stop + len
                                             } else {
                                                 stop
