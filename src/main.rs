@@ -734,17 +734,37 @@ async fn main() {
                                 Ok(Command::Lpop(lpop)) => {
                                     dbg!(&lpop);
                                     let Lpop{list_key, count} = lpop;
-                                    let elements = {
-                                        let mut lists = env.lists.lock().unwrap();
-                                        if let Some(list) = lists.get_mut(&list_key) {
-                                            let count = count.unwrap_or(1);
-                                            let count = min(count, list.len());
-                                            list.drain(0..count).map(|s| Frame::Bulk(s.into())).collect()
+                                    if let Some(count) = count {
+                                        let elements = {
+                                            let mut lists = env.lists.lock().unwrap();
+                                            if let Some(list) = lists.get_mut(&list_key) {
+                                                let count = min(count, list.len());
+                                                list.drain(0..count).map(|s| Frame::Bulk(s.into())).collect()
+                                            } else {
+                                                vec![]
+                                            }
+                                        };
+                                        client.send(Frame::Array(elements)).await.unwrap();
+                                    } else {
+                                        let element = {
+                                            let mut lists = env.lists.lock().unwrap();
+                                            if let Some(list) = lists.get_mut(&list_key) {
+                                                if !list.is_empty() {
+                                                    Some(Frame::Bulk(list.remove(0).into()))
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            }
+                                        };
+                                        if let Some(element) = element {
+                                            client.send(element).await.unwrap();
                                         } else {
-                                            vec![]
+                                            client.send(Frame::Null).await.unwrap();
                                         }
-                                    };
-                                    client.send(Frame::Array(elements)).await.unwrap();
+                                    }
+                                    
                                 },
                                 Ok(Command::Blpop(blpop)) => {
                                     dbg!(&blpop);
