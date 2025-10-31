@@ -1153,7 +1153,22 @@ mod geo{
         radius: f64,
         unit: &str,
     ) -> Vec<String> {
-        todo!()
+        let mut result = Vec::new();
+        for (score, member) in candidates {
+            let member_loc = decode_coordinates(*score);
+            let distance = cal_distance(loc, member_loc);
+            let distance_in_unit = match unit {
+                "m" => distance,
+                "km" => distance / 1000.0,
+                "mi" => distance / 1609.344,
+                "ft" => distance * 3.28084,
+                _ => distance,
+            };
+            if distance_in_unit <= radius {
+                result.push(member.clone());
+            }
+        }
+        result
     }
 
     #[test]
