@@ -71,9 +71,12 @@ impl Parse {
     }
 
     pub fn next_double(&mut self) -> Result<f64, ParseError> {
+        use atoi::atoi;
+
         const MSG: &str = "protocol error; invalid double";
 
         match self.next()? {
+            Frame::Simple(data) => data.parse().map_err(|_| MSG.into()),
             Frame::Double(v) => Ok(v),
             frame => {
                 Err(format!("protocol error; expected double frame but got {:?}", frame).into())
