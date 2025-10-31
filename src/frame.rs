@@ -11,6 +11,7 @@ pub enum Frame {
     Double(f64),
     Bulk(Bytes),
     Null,
+    NullArray,
     Array(Vec<Frame>),
     File(Bytes),
 }
@@ -191,6 +192,9 @@ impl Encoder<Frame> for FrameCodec {
             }
             Frame::Null => {
                 dst.extend_from_slice(b"$-1\r\n");
+            }
+            Frame::NullArray => {
+                dst.extend_from_slice(b"*-1\r\n");
             }
             Frame::Array(frames) => {
                 dst.extend_from_slice(b"*");

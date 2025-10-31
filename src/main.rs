@@ -447,7 +447,7 @@ async fn main() {
                                         .collect();
 
                                     let frame = if streams.is_empty() {
-                                        Frame::Null
+                                        Frame::NullArray
                                     } else {
                                         Frame::Array(streams)
                                     };
