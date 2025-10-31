@@ -675,21 +675,7 @@ async fn main() {
                                     let elements = {
                                         let lists = env.lists.lock().unwrap();
                                         if let Some(list) = lists.get(&list_key) {
-                                            let start = if (start + list.len() as i64) < 0 {
-                                                0
-                                            } else if start < 0 {
-                                                start + list.len() as i64
-                                            } else {
-                                                start
-                                            } as usize;
-                                            let stop = if (stop + list.len() as i64) < 0 {
-                                                0
-                                            } else if stop < 0 {
-                                                stop + list.len() as i64
-                                            } else {
-                                                stop
-                                            } as usize;
-                                            let stop = min(stop, list.len() - 1);
+                                            let (start, stop) = adjust(start, stop, list.len());
                                             if start > stop || start >= list.len() {
                                                 vec![]
                                             } else {
@@ -934,6 +920,7 @@ async fn main() {
                                     let members = {
                                         let zsets = env.zsets.lock().unwrap();
                                         if let Some(zset) = zsets.get(&key) {
+                                            let (start, stop) = adjust(start, stop, zset.card());
                                             zset.range(start, stop).into_iter().map(|(_, member)| {
                                                 member
                                             }).collect()
@@ -942,7 +929,7 @@ async fn main() {
                                         }
                                     };
                                     if members.is_empty() {
-                                        client.send(Frame::Null).await.unwrap();
+                                        client.send(Frame::NullArray).await.unwrap();
                                     } else {
                                         let frames = members.into_iter().map(|member| Frame::Bulk(member.into())).collect();
                                         client.send(Frame::Array(frames)).await.unwrap();
@@ -1240,6 +1227,26 @@ fn parse_id(new_id: &str, last_id: Option<(u128, u64)>) -> Result<(u128, u64)> {
             Ok((millis, seq))
         }
     }
+}
+
+fn adjust(start: isize, stop: isize, len: usize) -> (usize, usize) {
+                                        let len = len as isize;
+                                        let start = if (start + len) < 0 {
+                                                0
+                                            } else if start < 0 {
+                                                start + len
+                                            } else {
+                                                start
+                                            } as usize;
+                                            let stop = if (stop + len) < 0 {
+                                                0
+                                            } else if stop < 0 {
+                                                stop + len
+                                            } else {
+                                                stop
+                                            };
+                                        let stop = min(stop, len - 1) as usize;
+                                        (start, stop)
 }
 
 #[test]

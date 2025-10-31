@@ -64,22 +64,22 @@ impl SortedSet {
         self.entries.iter().position(|e| e.1 == member)
     }
 
-    pub fn range(&self, start: isize, stop: isize) -> Vec<(f64, String)> {
-        let len = self.entries.len() as isize;
-        let start = if start < 0 {
-            (len + start).max(0)
-        } else {
-            start.min(len)
-        };
-        let stop = if stop < 0 {
-            (len + stop).max(0)
-        } else {
-            stop.min(len)
-        };
+    pub fn range(&self, start: usize, stop: usize) -> Vec<(f64, String)> {
+        let len = self.entries.len();
+        // let start = if start < 0 {
+        //     (len + start).max(0)
+        // } else {
+        //     start.min(len)
+        // };
+        // let stop = if stop < 0 {
+        //     (len + stop).max(0)
+        // } else {
+        //     stop.min(len)
+        // };
         if start > stop || start >= len {
             return vec![];
         }
-        self.entries[start as usize..=stop as usize].to_vec()
+        self.entries[start..=stop].to_vec()
     }
 
     pub fn card(&self) -> usize {
