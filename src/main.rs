@@ -1228,14 +1228,14 @@ fn parse_id(new_id: &str, last_id: Option<(u128, u64)>) -> Result<(u128, u64)> {
 }
 
 fn adjust(start: isize, stop: isize, len: usize) -> (usize, usize) {
-                                        let len = len as isize;
-                                        let start = if (start + len) < 0 {
-                                                0
-                                            } else if start < 0 {
-                                                start + len
-                                            } else {
-                                                start
-                                            } as usize;
+    let len = len as isize;
+    let start = if (start + len) < 0 {
+        0
+    } else if start < 0 {
+        start + len
+    } else {
+        start
+    } as usize;
                                             let stop = if (stop + len) < 0 {
                                                 0
                                             } else if stop < 0 {
