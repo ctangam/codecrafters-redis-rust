@@ -788,9 +788,9 @@ async fn main() {
                                             let mut wait_lists = env.wait_lists.lock().unwrap();
                                             wait_lists.entry(list_key.clone()).or_default().push(tx);
                                         }
-                                        if timeout != 0 {
+                                        if timeout != 0.0 {
                                             tokio::select! {
-                                                _ = tokio::time::sleep(Duration::from_secs(timeout)) => {},
+                                                _ = tokio::time::sleep(Duration::from_secs_f64(timeout)) => {},
                                                 Ok(element) = rx => {
                                                     elements = vec![Frame::Bulk(list_key.clone().into()), Frame::Bulk(element.into())];
                                                 }
