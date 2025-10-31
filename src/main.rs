@@ -928,12 +928,10 @@ async fn main() {
                                             vec![]
                                         }
                                     };
-                                    if members.is_empty() {
-                                        client.send(Frame::NullArray).await.unwrap();
-                                    } else {
+                                    
                                         let frames = members.into_iter().map(|member| Frame::Bulk(member.into())).collect();
                                         client.send(Frame::Array(frames)).await.unwrap();
-                                    }
+                                    
                                 }
                                 Ok(Command::Zcard(zcard)) => {
                                     dbg!(&zcard);
