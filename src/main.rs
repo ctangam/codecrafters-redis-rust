@@ -792,6 +792,7 @@ async fn main() {
                                             tokio::select! {
                                                 _ = tokio::time::sleep(Duration::from_secs_f64(timeout)) => {},
                                                 Ok(element) = rx => {
+                                                    dbg!(&element);
                                                     elements = vec![Frame::Bulk(list_key.clone().into()), Frame::Bulk(element.into())];
                                                 }
                                             }
