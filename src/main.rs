@@ -800,7 +800,7 @@ async fn main() {
                                             elements = vec![Frame::Bulk(list_key.clone().into()), Frame::Bulk(element.into())];
                                         }
                                     }
-                                    client.send(if elements.is_empty() { Frame::Null } else { Frame::Array(elements) }).await.unwrap();
+                                    client.send(if elements.is_empty() { Frame::NullArray } else { Frame::Array(elements) }).await.unwrap();
                                 },
                                 Ok(Command::Subscribe(subscribe)) => {
                                     dbg!(&subscribe);
